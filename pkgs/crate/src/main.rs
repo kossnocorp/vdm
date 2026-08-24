@@ -18,6 +18,9 @@ pub use source::*;
 mod javascript;
 pub use javascript::*;
 
+mod rust;
+pub(crate) use rust::*;
+
 mod graph;
 pub use graph::*;
 

@@ -41,6 +41,8 @@ async fn resolve_http_graph(
 ) -> Result<BTreeMap<VitManifestTargetUrl, VitGraphFile>> {
     let mut pending = vec![(root, None)];
     let mut files = BTreeMap::new();
+    let mut rust_resolver = None;
+    let mut rust_origin = None;
     while let Some((target, downloaded)) = pending.pop() {
         if files.contains_key(target.key()) {
             continue;
@@ -82,6 +84,48 @@ async fn resolve_http_graph(
             }
             dependencies.sort();
             dependencies.dedup();
+        } else if is_rust_path(source_path) {
+            let origin = http_origin(&final_url);
+            if let Some(existing) = &rust_origin {
+                ensure!(
+                    existing == &origin,
+                    "Rust dependency redirected to a different HTTP origin: {final_url}"
+                );
+            } else {
+                rust_origin = Some(origin.clone());
+            }
+            let requested = PathBuf::from(final_url.path().trim_start_matches('/'));
+            let bytes = download.bytes.clone();
+            let current = rust_resolver.take();
+            let (next, resolved) = tokio::task::spawn_blocking(move || {
+                let resolver = match current {
+                    Some(resolver) => resolver,
+                    None => RustResolver::new(
+                        HttpFileSystem::new_for(origin, PathBuf::from("/vit"))?,
+                        &requested,
+                    )?,
+                };
+                let dependencies = resolver.dependencies(&requested, &bytes)?;
+                Ok::<_, Error>((resolver, dependencies))
+            })
+            .await
+            .context("Rust HTTP dependency resolution task failed")??;
+            rust_resolver = Some(next);
+            for path in resolved {
+                let url = http_origin(&final_url).join(&path.to_string_lossy())?;
+                let dependency = VitSourceInput::parse_target(url.as_str())?;
+                let dependency = dependency
+                    .as_any()
+                    .downcast_ref::<VitSourceHttpTarget>()
+                    .context("Resolved HTTP dependency has a different source")?
+                    .clone();
+                dependencies.push(dependency.key().clone());
+                if !files.contains_key(dependency.key()) {
+                    pending.push((dependency, None));
+                }
+            }
+            dependencies.sort();
+            dependencies.dedup();
         }
         files.insert(
             target.key().clone(),
@@ -103,6 +147,12 @@ async fn resolve_github_graph(
     let revision = root_download.revision.clone();
     let repository = cache.repository(&root);
     let resolver = Arc::new(GitResolver::new(repository, revision.clone()));
+    let rust_file_system = GitFileSystem {
+        repository: cache.repository(&root),
+        revision: revision.clone(),
+        root: PathBuf::from("/vit"),
+    };
+    let mut rust_resolver = None;
     let mut pending = vec![(root, Some(root_download))];
     let mut files = BTreeMap::new();
 
@@ -140,6 +190,31 @@ async fn resolve_github_graph(
             }
             dependencies.sort();
             dependencies.dedup();
+        } else if is_rust_path(Path::new(target.repository_path())) {
+            let requested = PathBuf::from(target.repository_path());
+            let bytes = download.bytes.clone();
+            let current = rust_resolver.take();
+            let file_system = rust_file_system.clone();
+            let (next, resolved) = tokio::task::spawn_blocking(move || {
+                let resolver = match current {
+                    Some(resolver) => resolver,
+                    None => RustResolver::new(file_system, &requested)?,
+                };
+                let dependencies = resolver.dependencies(&requested, &bytes)?;
+                Ok::<_, Error>((resolver, dependencies))
+            })
+            .await
+            .context("Rust GitHub dependency resolution task failed")??;
+            rust_resolver = Some(next);
+            for path in resolved {
+                let dependency = target.with_path(&path)?;
+                dependencies.push(dependency.key().clone());
+                if !files.contains_key(dependency.key()) {
+                    pending.push((dependency, None));
+                }
+            }
+            dependencies.sort();
+            dependencies.dedup();
         }
 
         files.insert(
@@ -159,6 +234,18 @@ fn is_javascript_path(path: &Path) -> bool {
         path.extension().and_then(|extension| extension.to_str()),
         Some("js" | "jsx" | "mjs" | "cjs" | "ts" | "tsx" | "mts" | "cts")
     )
+}
+
+fn is_rust_path(path: &Path) -> bool {
+    path.extension().is_some_and(|extension| extension == "rs")
+}
+
+fn http_origin(url: &reqwest::Url) -> reqwest::Url {
+    let mut origin = url.clone();
+    origin.set_path("/");
+    origin.set_query(None);
+    origin.set_fragment(None);
+    origin
 }
 
 struct GitResolver {
@@ -313,6 +400,12 @@ impl GitFileSystem {
             }
         }
         Ok(normalized)
+    }
+}
+
+impl RustFileSystem for GitFileSystem {
+    fn read_rust_file(&self, path: &Path) -> io::Result<Vec<u8>> {
+        FileSystem::read(self, &self.root.join(path))
     }
 }
 
@@ -539,6 +632,12 @@ impl HttpFileSystem {
     }
 }
 
+impl RustFileSystem for HttpFileSystem {
+    fn read_rust_file(&self, path: &Path) -> io::Result<Vec<u8>> {
+        FileSystem::read(self, &self.root.join(path))
+    }
+}
+
 impl FileSystem for HttpFileSystem {
     fn new() -> Self {
         Self::default()
@@ -646,5 +745,55 @@ mod tests {
                 .any(|key| key.as_str().ends_with("/internal.ts"))
         );
         assert!(graph.keys().any(|key| key.as_str().ends_with("/alias.ts")));
+    }
+
+    #[tokio::test]
+    async fn resolves_recursive_http_rust_graphs() {
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let address = listener.local_addr().unwrap();
+        let server = tokio::spawn(async move {
+            loop {
+                let Ok((mut stream, _)) = listener.accept().await else {
+                    break;
+                };
+                tokio::spawn(async move {
+                    let mut request = [0; 4096];
+                    let read = stream.read(&mut request).await.unwrap();
+                    let request = String::from_utf8_lossy(&request[..read]);
+                    let path = request
+                        .lines()
+                        .next()
+                        .and_then(|line| line.split_whitespace().nth(1))
+                        .unwrap_or("/");
+                    let (status, body) = match path {
+                        "/pkg/Cargo.toml" => {
+                            ("200 OK", "[package]\nname='fixture'\nversion='0.1.0'\n")
+                        }
+                        "/pkg/src/lib.rs" => ("200 OK", "mod root; mod dependency;\n"),
+                        "/pkg/src/root.rs" => ("200 OK", "use crate::dependency::Dependency;\n"),
+                        "/pkg/src/dependency.rs" => ("200 OK", "pub struct Dependency;\n"),
+                        _ => ("404 Not Found", ""),
+                    };
+                    let response = format!(
+                        "HTTP/1.1 {status}\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{body}",
+                        body.len()
+                    );
+                    stream.write_all(response.as_bytes()).await.unwrap();
+                });
+            }
+        });
+
+        let target =
+            VitSourceInput::parse_target(&format!("http://{address}/pkg/src/root.rs")).unwrap();
+        let graph = resolve_graph(target).await.unwrap();
+        server.abort();
+
+        assert_eq!(graph.len(), 2);
+        assert!(graph.keys().any(|key| key.as_str().ends_with("/root.rs")));
+        assert!(
+            graph
+                .keys()
+                .any(|key| key.as_str().ends_with("/dependency.rs"))
+        );
     }
 }
