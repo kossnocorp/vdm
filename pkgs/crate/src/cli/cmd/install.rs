@@ -2,16 +2,18 @@ use crate::cli::prelude::*;
 
 #[derive(Args)]
 pub struct VitCliCmdInstall {
-    #[command(flatten)]
+    #[usage(flatten)]
     manifest_args: VitCliArgsManifest,
 
     /// Never hit network, use only local cache.
-    #[arg(short, long, default_value_t = false)]
+    #[usage(short, long, default = "false")]
     offline: bool,
 }
 
-impl VitCliCmdInstall {
-    pub async fn run(&self) -> Result<()> {
+impl RunAsync for VitCliCmdInstall {
+    type Output = Result<()>;
+
+    async fn run_async(self) -> Self::Output {
         VitVendor::install(self.manifest_args.manifest.as_deref(), self.offline).await
     }
 }

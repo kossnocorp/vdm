@@ -2,15 +2,17 @@ use crate::cli::prelude::*;
 
 #[derive(Args)]
 pub struct VitCliCmdUpdate {
-    #[command(flatten)]
+    #[usage(flatten)]
     manifest_args: VitCliArgsManifest,
 
-    #[arg(value_name = "FILE")]
+    #[usage(value_name = "FILE")]
     file: String,
 }
 
-impl VitCliCmdUpdate {
-    pub async fn run(&self) -> Result<()> {
+impl RunAsync for VitCliCmdUpdate {
+    type Output = Result<()>;
+
+    async fn run_async(self) -> Self::Output {
         VitVendor::update(self.manifest_args.manifest.as_deref(), &self.file).await
     }
 }

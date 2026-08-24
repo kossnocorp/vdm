@@ -9,7 +9,8 @@ use add::*;
 mod update;
 use update::*;
 
-#[derive(Subcommand)]
+#[derive(Subcommands)]
+#[usage(run_async)]
 pub enum VitCliCmd {
     /// Install dependencies
     Install(VitCliCmdInstall),
@@ -19,16 +20,4 @@ pub enum VitCliCmd {
 
     /// Update a dependency
     Update(VitCliCmdUpdate),
-}
-
-impl VitCliCmd {
-    pub async fn run(&self) -> Result<()> {
-        match &self {
-            VitCliCmd::Install(cmd) => cmd.run().await,
-
-            VitCliCmd::Add(cmd) => cmd.run().await,
-
-            VitCliCmd::Update(cmd) => cmd.run().await,
-        }
-    }
 }

@@ -25,16 +25,13 @@ mod dirs;
 pub use dirs::*;
 
 mod vendor;
+use usage::RunAsync;
 pub use vendor::*;
 
 #[tokio::main]
 async fn main() {
-    match VitCli::run().await {
-        Ok(_) => {}
-
-        Err(err) => {
-            println!("Error: {:?}", err);
-            std::process::exit(1);
-        }
-    }
+    VitCli::parse().run_async().await.unwrap_or_else(|err| {
+        println!("Error: {:?}", err);
+        std::process::exit(1);
+    });
 }

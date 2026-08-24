@@ -7,23 +7,9 @@ use cmd::*;
 mod args;
 use args::*;
 
-#[derive(Parser)]
-#[command(name = "vit")]
-#[command(about = "Vendored dependencies manager", long_about = None)]
-#[command(arg_required_else_help = true)]
+#[derive(Cli)]
+#[usage(run_async, bin = "vit", about = "Vendored dependencies manager")]
 pub struct VitCli {
-    #[command(subcommand)]
-    pub command: Option<VitCliCmd>,
-}
-
-impl VitCli {
-    pub async fn run() -> Result<()> {
-        let cli = Self::parse();
-
-        match &cli.command {
-            Some(cmd) => cmd.run().await,
-
-            None => bail!("No command specified. Use --help for usage information."),
-        }
-    }
+    #[usage(subcommand)]
+    pub command: VitCliCmd,
 }
