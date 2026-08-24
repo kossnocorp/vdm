@@ -25,6 +25,28 @@ impl VitManifest {
         );
     }
 
+    pub fn update(
+        &mut self,
+        url: &VitManifestTargetUrl,
+        version: &VitManifestSourceVersion,
+    ) -> Result<()> {
+        for (base, source) in &mut self.sources {
+            match source {
+                VitManifestSource::File(file) if base == url => {
+                    file.set_version(version);
+                    return Ok(());
+                }
+                VitManifestSource::Files(files) => {
+                    if files.set_version(base, url, version)? {
+                        return Ok(());
+                    }
+                }
+                _ => {}
+            }
+        }
+        bail!("{url} is not present in the manifest")
+    }
+
     pub fn iter_targets(&self) -> impl Iterator<Item = Result<Box<dyn VitTarget>>> + '_ {
         self.sources.iter().flat_map(|(url, source)| match source {
             VitManifestSource::File(file) => {
@@ -178,5 +200,42 @@ files = ["../secret"]
             source,
             "[sources]\n\"gh:kossnocorp/dev/mise.toml\" = \"main\"\n"
         );
+    }
+
+    #[test]
+    fn updates_direct_and_grouped_target_versions() {
+        let mut manifest: VitManifest = toml::from_str(
+            r#"
+[sources]
+"gh:kossnocorp/dev/README.md" = "old"
+
+[sources."gh:kossnocorp/dev"]
+version = "old"
+files = ["mise.toml", { path = "package.json", version = "older" }]
+"#,
+        )
+        .unwrap();
+        let version = VitManifestSourceVersion::new("main");
+        manifest
+            .update(
+                &VitManifestTargetUrl::new("gh:kossnocorp/dev/README.md"),
+                &version,
+            )
+            .unwrap();
+        manifest
+            .update(
+                &VitManifestTargetUrl::new("gh:kossnocorp/dev/mise.toml"),
+                &version,
+            )
+            .unwrap();
+        manifest
+            .update(
+                &VitManifestTargetUrl::new("gh:kossnocorp/dev/package.json"),
+                &version,
+            )
+            .unwrap();
+
+        let targets = manifest.targets().unwrap();
+        assert!(targets.values().all(|target| target.version() == &version));
     }
 }

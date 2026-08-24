@@ -21,6 +21,13 @@ impl VitManifestSourceFile {
             Self::Config(config) => &config.version,
         }
     }
+
+    pub(super) fn set_version(&mut self, version: &VitManifestSourceVersion) {
+        match self {
+            Self::Version(current) => *current = version.clone(),
+            Self::Config(config) => config.version = version.clone(),
+        }
+    }
 }
 
 #[derive(Debug, Deserialize, Serialize)]
@@ -37,6 +44,38 @@ impl VitManifestSourceFiles {
             VitManifestSourceMapFile::Path(path) => (path, &self.version),
             VitManifestSourceMapFile::Config(config) => (&config.path, &config.common.version),
         })
+    }
+
+    pub(super) fn set_version(
+        &mut self,
+        base: &VitManifestTargetUrl,
+        target: &VitManifestTargetUrl,
+        version: &VitManifestSourceVersion,
+    ) -> Result<bool> {
+        for file in &mut self.files {
+            let path = match file {
+                VitManifestSourceMapFile::Path(path) => path,
+                VitManifestSourceMapFile::Config(config) => &config.path,
+            };
+            if &base.join(path)? != target {
+                continue;
+            }
+            match file {
+                VitManifestSourceMapFile::Path(path) => {
+                    *file = VitManifestSourceMapFile::Config(VitManifestSourceMapFileConfig {
+                        path: path.clone(),
+                        common: VitManifestSourceFileConfig {
+                            version: version.clone(),
+                        },
+                    });
+                }
+                VitManifestSourceMapFile::Config(config) => {
+                    config.common.version = version.clone();
+                }
+            }
+            return Ok(true);
+        }
+        Ok(false)
     }
 }
 
