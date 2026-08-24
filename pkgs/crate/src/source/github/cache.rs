@@ -30,6 +30,20 @@ impl VitGitHubCache {
         self.fetch_url(target, url).await
     }
 
+    pub(crate) fn repository(&self, target: &VitSourceGitHubTarget) -> PathBuf {
+        self.root
+            .join(&target.owner)
+            .join(format!("{}.git", target.repo))
+    }
+
+    pub(crate) async fn fetch_revision(
+        &self,
+        target: &VitSourceGitHubTarget,
+        revision: &str,
+    ) -> Result<VitSourceFile> {
+        self.fetch(target.with_version(revision)).await
+    }
+
     async fn fetch_url(&self, target: VitSourceGitHubTarget, url: String) -> Result<VitSourceFile> {
         let _permit = FETCH_PERMITS
             .acquire()
@@ -61,7 +75,7 @@ impl VitGitHubCache {
         lock.lock_exclusive()
             .with_context(|| format!("Failed to lock {}", lock_path.display()))?;
 
-        let repo_path = owner_dir.join(format!("{}.git", target.repo));
+        let repo_path = self.repository(target);
         let repo = if repo_path.exists() {
             Repository::open_bare(&repo_path)
                 .with_context(|| format!("Failed to open Git cache {}", repo_path.display()))?

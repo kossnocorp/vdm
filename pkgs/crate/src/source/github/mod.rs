@@ -102,6 +102,43 @@ impl VitTarget for VitSourceGitHubTarget {
     }
 }
 
+impl VitSourceGitHubTarget {
+    pub(crate) fn repository_path(&self) -> &str {
+        self.path.as_str()
+    }
+
+    pub(crate) fn with_path(&self, path: &Path) -> Result<Self> {
+        ensure!(
+            path.components()
+                .all(|part| matches!(part, Component::Normal(_))),
+            "Resolved GitHub path {} is outside the repository",
+            path.display()
+        );
+        let path = path.to_string_lossy().into_owned();
+        Ok(Self {
+            key: VitManifestTargetUrl::new(format!("gh:{}/{}/{path}", self.owner, self.repo)),
+            owner: self.owner.clone(),
+            repo: self.repo.clone(),
+            path: VitManifestTargetPath::new(&path),
+            version: self.version.clone(),
+            source_url: format!(
+                "https://github.com/{}/{}/blob/{}/{path}",
+                self.owner, self.repo, self.version
+            ),
+        })
+    }
+
+    pub(crate) fn with_version(&self, version: &str) -> Self {
+        let mut target = self.clone();
+        target.version = VitManifestSourceVersion::new(version);
+        target.source_url = format!(
+            "https://github.com/{}/{}/blob/{}/{}",
+            target.owner, target.repo, version, target.path
+        );
+        target
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

@@ -15,6 +15,12 @@ pub use lock::*;
 mod source;
 pub use source::*;
 
+mod javascript;
+pub use javascript::*;
+
+mod graph;
+pub use graph::*;
+
 pub mod file;
 pub use file::*;
 

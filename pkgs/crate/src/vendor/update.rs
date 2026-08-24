@@ -30,27 +30,16 @@ impl VitVendor {
 
         let mut state = state.as_locked().await?;
 
-        let download = target.source().download(target.as_ref()).await?;
-        let destination = state.paths.target(target.as_ref());
-        let next = VitLockFile::new(target.as_ref(), &download, &state.paths);
-        let current_bytes = match tokio::fs::read(&destination).await {
-            Ok(bytes) => Some(bytes),
-            Err(error) if error.kind() == std::io::ErrorKind::NotFound => None,
-            Err(error) => {
-                return Err(error)
-                    .with_context(|| format!("Failed to read {}", destination.display()));
-            }
-        };
-        let changed = state.lock.files.get(target.key()) != Some(&next)
-            || current_bytes.as_deref() != Some(&download.bytes);
-
-        if changed {
-            download.write(&destination).await?;
-            state.lock.files.insert(target.key().clone(), next);
-            state.lock.write_toml(&state.paths.lock).await?;
-            println!("Updated {}", target.key());
+        let key = target.key().clone();
+        let graph = resolve_graph(target).await?;
+        let direct = targets.keys().cloned().collect::<BTreeSet<_>>();
+        let changed = Self::write_graph(&mut state, graph, &direct).await?;
+        let removed = Self::prune_unreachable(&mut state, direct.iter().cloned()).await?;
+        state.lock.write_toml(&state.paths.lock).await?;
+        if changed == 0 && removed == 0 {
+            println!("{key} is already up to date");
         } else {
-            println!("{} is already up to date", target.key());
+            println!("Updated {key}: wrote {changed} and removed {removed} files");
         }
         Ok(())
     }

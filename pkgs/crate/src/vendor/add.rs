@@ -19,18 +19,33 @@ impl VitVendor {
 
         let mut state = state.as_locked().await?;
 
-        let download = target.source().download(target.as_ref()).await?;
+        let key = target.key().clone();
         let destination = state.paths.target(target.as_ref());
-        let lock_entry = VitLockFile::new(target.as_ref(), &download, &state.paths);
+        let graph = resolve_graph(target).await?;
+        let mut direct = targets.keys().cloned().collect::<BTreeSet<_>>();
+        direct.insert(key.clone());
+        for (graph_key, file) in &graph {
+            if let Some(existing) = state.lock.files.get(graph_key) {
+                ensure!(
+                    existing.revision == file.download.revision
+                        && existing.hash
+                            == format!("sha256:{:x}", Sha256::digest(&file.download.bytes)),
+                    "{graph_key} is already locked at a conflicting revision"
+                );
+            }
+        }
+        let added = Self::write_graph(&mut state, graph, &direct).await?;
 
-        download.write(&destination).await?;
-
-        state.manifest.add(target.key(), target.version());
-        state.lock.files.insert(target.key().clone(), lock_entry);
+        let root = state
+            .lock
+            .files
+            .get(&key)
+            .context("Resolved graph is missing its root")?;
+        state.manifest.add(&key, &root.version);
         state.manifest.write_toml(&state.paths.manifest).await?;
         state.lock.write_toml(&state.paths.lock).await?;
 
-        println!("Added {} to {}", target.key(), destination.display());
+        println!("Added {key} and {added} files to {}", destination.display());
         Ok(())
     }
 }
