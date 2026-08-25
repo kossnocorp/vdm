@@ -1,39 +1,193 @@
 ---
-import "../styles/global.css";
+import Layout from "#/ui/layouts/Layout.astro";
+import GitHubIcon from "#/assets/github-original.svg";
 ---
 
-<html lang="en">
-  <head>
-    <meta charset="utf-8" />
-    <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
-    <link rel="icon" href="/favicon.ico" />
-    <meta name="viewport" content="width=device-width" />
-    <meta name="generator" content={Astro.generator} />
-    <title>Vit</title>
-  </head>
-  <body>
-    <main class="max-w-5xl mx-auto px-4 py-20 flex flex-col gap-6">
-      <h1 class="text-3xl font-semibold text-center">
-        Vit - Vendored Dependencies Manager
-      </h1>
+<Layout
+  title="Vit - Vendored Dependencies Manager"
+  description="Vit documentation website"
+>
+  <div class="page">
+    <main class="landing">
+      <section class="section hero">
+        <header class="heading">
+          <h1>Vit</h1>
 
-      <p class="flex flex-col gap-4">
-        <h2 class="text-2xl font-semibold text-center">Install Vit</h2>
+          <p class="subheadline">Vendored Dependencies Manager</p>
+        </header>
 
-        <ul class="flex flex-col gap-4">
-          <li class="flex flex-col gap-2">
-            <h3 class="text-lg font-medium text-center">macOS/Linux:</h3>
-            <pre
-              class="border border-slate-300 rounded-md px-2 py-1 w-full max-w-xl mx-auto"><code>curl -fsSL https://vit.fyi/install.sh | sh</code></pre>
+        <p class="description">
+          Pull dependency code right into your repo without sacrificing
+          developer experience.
+        </p>
+
+        <nav class="links">
+          <ul>
+            <li>
+              <a href="https://github.com/kossnocorp/vit" class="link">
+                <GitHubIcon class="icon" />GitHub
+              </a>
+            </li>
+          </ul>
+        </nav>
+      </section>
+
+      <section class="section install">
+        <h2>Install Vit</h2>
+
+        <ul>
+          <li>
+            <label>macOS/Linux:</label>
+
+            <pre><code>curl -fsSL https://vit.fyi/install.sh | sh</code></pre>
           </li>
 
-          <li class="flex flex-col gap-2">
-            <h3 class="text-lg font-medium text-center">Windows:</h3>
-            <pre
-              class="border border-slate-300 rounded-md px-2 py-1 w-full max-w-xl mx-auto"><code>irm https://vit.fyi/install.ps1 | iex</code></pre>
+          <li>
+            <label>Windows:</label>
+
+            <pre><code>irm https://vit.fyi/install.ps1 | iex</code></pre>
           </li>
         </ul>
-      </p>
+      </section>
+
+      <section class="section why">
+        <h2>Why Vit</h2>
+
+        <ul class="points">
+          <dl>
+            <dt>Protect from Supply Chain Attacks</dt>
+
+            <dd>
+              No more surprise updates with malicious code. Neither Shai-Hulud,
+              Shia LaBeouf, nor any other malicious actor, can sneak into your
+              dependencies unnoticed.
+            </dd>
+
+            <dt>Fight Dependencies Bloat</dt>
+
+            <dd>
+              Tired of lengthy package.json with single-function dependencies?
+              Pull only the code you need and get rid of the rest. Now leftpad
+              finally makes sense.
+            </dd>
+
+            <dt>Own Your Dependencies</dt>
+
+            <dd>
+              Your dependencies now are yours! Fix bugs, add bugs, and do
+              whatever you want without waiting for a burnt-out maintainer to do
+              it for you.
+            </dd>
+
+            <dt>AI-Assisted Review</dt>
+
+            <dd>
+              Everybody says you should read your dependencies' code. Now you
+              actually will with the built-in AI review feature, whether you
+              install a new dependency or update an existing one.
+            </dd>
+
+            <dt>Btw</dt>
+
+            <dd>Vit is built with Rust. Just saying.</dd>
+          </dl>
+        </ul>
+      </section>
     </main>
-  </body>
-</html>
+
+    <footer>
+      Sasha Koss © 2026 <a href="https://koss.nocorp.me/mit" class="link"
+        >MIT License</a
+      >
+    </footer>
+  </div>
+</Layout>
+
+<style>
+  @reference "#/ui/styles/global.css";
+
+  .page {
+    @apply w-full max-w-5xl px-12 py-20 flex flex-col gap-20;
+  }
+
+  .landing {
+    @apply flex flex-col gap-12;
+  }
+
+  .section {
+    @apply flex flex-col gap-4;
+  }
+
+  h1 {
+    @apply text-7xl font-bold text-(--color-heading-1);
+  }
+
+  h2 {
+    @apply text-xl font-bold text-(--color-heading-2);
+  }
+
+  h3 {
+    @apply text-base font-bold text-(--color-heading-3);
+  }
+
+  .hero {
+    & .heading {
+      @apply flex flex-col gap-2;
+
+      & .subheadline {
+        @apply text-xl font-semibold text-(--color-heading-2);
+      }
+    }
+
+    & .description,
+    & .links {
+      @apply text-balance max-w-xl;
+    }
+
+    & .description {
+      @apply text-(--color-text);
+    }
+  }
+
+  .install {
+    & ul {
+      @apply flex flex-col gap-4;
+
+      & li {
+        @apply flex flex-col gap-2;
+      }
+
+      & label {
+        @apply font-semibold text-(--color-heading-2);
+      }
+
+      & pre {
+        @apply border border-(--color-code-border) rounded-md px-2 py-1 w-full max-w-md font-mono bg-(--color-code-canvas) text-(--color-code-ink) text-sm;
+      }
+    }
+  }
+
+  .points {
+    @apply text-balance max-w-xl;
+
+    & dd + dt {
+      @apply mt-4;
+    }
+
+    & dl {
+      @apply flex flex-col gap-2;
+
+      & dt {
+        @apply font-semibold text-(--color-heading-2);
+      }
+
+      & dd {
+        @apply text-base text-balance text-(--color-text);
+      }
+    }
+  }
+
+  footer {
+    @apply opacity-70 hover:opacity-800;
+  }
+</style>

@@ -2,6 +2,9 @@
   "name": "vit.fyi",
   "private": true,
   "type": "module",
+  "imports": {
+    "#/*": "./src/*"
+  },
   "dependencies": {
     "astro": "7.2.3"
   },
