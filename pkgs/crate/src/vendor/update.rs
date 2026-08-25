@@ -1,30 +1,24 @@
 use crate::prelude::*;
 
-use crossterm::event::{self, Event, KeyCode, KeyEventKind};
-use crossterm::terminal::{disable_raw_mode, enable_raw_mode};
 use similar::{ChangeTag, TextDiff};
-use std::io::{self, IsTerminal, Write};
+use std::io;
 
-enum ReviewKind {
+pub(super) enum ReviewKind {
     Upsert(VitGraphFile, Box<VitLockFile>),
     Delete,
 }
 
-struct ReviewFile {
-    key: VitManifestTargetUrl,
-    path: String,
-    old: Option<VitLockFile>,
-    kind: ReviewKind,
-    additions: usize,
-    deletions: usize,
-    diff: String,
-    accepted: bool,
-}
-
-enum ReviewChoice {
-    Accept,
-    Reject,
-    Cancel,
+pub(super) struct ReviewFile {
+    pub key: VitManifestTargetUrl,
+    pub path: String,
+    pub old: Option<VitLockFile>,
+    pub kind: ReviewKind,
+    pub additions: usize,
+    pub deletions: usize,
+    pub diff: String,
+    pub old_source: String,
+    pub new_source: String,
+    pub accepted: bool,
 }
 
 impl VitVendor {
@@ -92,6 +86,8 @@ impl VitVendor {
             }
             let (diff, additions, deletions) =
                 file_diff(&next.path, &current, &file.download.bytes);
+            let old_source = String::from_utf8_lossy(&current).into_owned();
+            let new_source = String::from_utf8_lossy(&file.download.bytes).into_owned();
             files.push(ReviewFile {
                 key: file_key,
                 path: next.path.clone(),
@@ -100,6 +96,8 @@ impl VitVendor {
                 additions,
                 deletions,
                 diff,
+                old_source,
+                new_source,
                 accepted: false,
             });
         }
@@ -130,6 +128,8 @@ impl VitVendor {
                 additions,
                 deletions,
                 diff,
+                old_source: String::from_utf8_lossy(&current).into_owned(),
+                new_source: String::new(),
                 accepted: false,
             });
         }
@@ -140,38 +140,16 @@ impl VitVendor {
             return Ok(());
         }
 
-        let file_count = files.len();
-        for (index, file) in files.iter_mut().enumerate() {
-            println!("\n[{}/{}] {}", index + 1, file_count, file.path);
-            print!("{}", file.diff);
-            match prompt("Accept, reject, or cancel? [a/r/c] ", true)? {
-                ReviewChoice::Accept => file.accepted = true,
-                ReviewChoice::Reject => file.accepted = false,
-                ReviewChoice::Cancel => {
-                    println!("Update cancelled");
-                    return Ok(());
-                }
+        match super::review::run(&mut files)? {
+            super::review::ReviewOutcome::Cancelled => {
+                println!("Update cancelled");
+                return Ok(());
             }
-        }
-
-        println!("\nReview recap:");
-        for file in &files {
-            let decision = if file.accepted {
-                "accepted"
-            } else {
-                "rejected"
-            };
-            println!(
-                "  {}  +{} -{}  {decision}",
-                file.path, file.additions, file.deletions
-            );
-        }
-        if !matches!(
-            prompt("Apply accepted changes? [a/r] ", false)?,
-            ReviewChoice::Accept
-        ) {
-            println!("Update rejected");
-            return Ok(());
+            super::review::ReviewOutcome::Rejected => {
+                println!("Update rejected");
+                return Ok(());
+            }
+            super::review::ReviewOutcome::Accepted => {}
         }
 
         let mut changed = 0;
@@ -249,44 +227,6 @@ fn file_diff(path: &str, old: &[u8], new: &[u8]) -> (String, usize, usize) {
         .header(&format!("a/{path}"), &format!("b/{path}"))
         .to_string();
     (rendered, additions, deletions)
-}
-
-fn prompt(message: &str, allow_cancel: bool) -> Result<ReviewChoice> {
-    loop {
-        print!("{message}");
-        io::stdout().flush()?;
-        let character = if io::stdin().is_terminal() {
-            enable_raw_mode().context("Failed to enable terminal raw mode")?;
-            let result = loop {
-                match event::read() {
-                    Ok(Event::Key(key)) if key.kind == KeyEventKind::Press => match key.code {
-                        KeyCode::Char(character) => break Ok(character),
-                        KeyCode::Esc => break Ok('c'),
-                        _ => {}
-                    },
-                    Ok(_) => {}
-                    Err(error) => break Err(error),
-                }
-            };
-            disable_raw_mode().context("Failed to restore terminal mode")?;
-            let character = result.context("Failed to read terminal input")?;
-            println!("{character}");
-            character
-        } else {
-            let mut input = String::new();
-            io::stdin().read_line(&mut input)?;
-            input.chars().next().unwrap_or_default()
-        };
-        match character.to_ascii_lowercase() {
-            'a' => return Ok(ReviewChoice::Accept),
-            'r' => return Ok(ReviewChoice::Reject),
-            'c' if allow_cancel => return Ok(ReviewChoice::Cancel),
-            _ => println!(
-                "Please press {}.",
-                if allow_cancel { "a, r, or c" } else { "a or r" }
-            ),
-        }
-    }
 }
 
 #[cfg(test)]

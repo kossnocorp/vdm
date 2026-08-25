@@ -6,6 +6,8 @@ mod install;
 
 mod update;
 
+mod review;
+
 pub struct VitVendor;
 
 impl VitVendor {

@@ -14,7 +14,7 @@ path = "src/main.rs"
 [dependencies]
 anyhow = "1.0.104"
 async-trait = "0.1.89"
-crossterm = "0.29.0"
+crossterm = "0.28.1"
 directories = "6.0.0"
 fs2 = "0.4.3"
 git2 = { version = "0.20.4", default-features = false, features = ["https"] }
@@ -26,11 +26,14 @@ oxc_resolver = "11.23.0"
 oxc_span = "0.146.0"
 oxc_syntax = "0.146.0"
 reqwest = { version = "0.12.28", features = ["blocking"] }
+ratatui = "0.29.0"
 serde = { version = "1.0.229", features = ["derive"] }
 sha2 = "0.10.9"
 similar = "2.7.0"
+syntect = { version = "5.2.0", default-features = false, features = ["default-fancy"] }
 syn = { version = "2.0.106", features = ["full", "visit"] }
 tempfile = "3.26.0"
 tokio = { version = "1.53.1", features = ["full"] }
 toml = "0.9.8"
+two-face = { version = "0.5.2", default-features = false, features = ["syntect-default-fancy"] }
 usage = { package = "usage-rs", version = "6" }
