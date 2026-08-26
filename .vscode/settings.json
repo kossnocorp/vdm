@@ -1,0 +1,4 @@
+{
+  "editor.defaultFormatter": "oxc.oxc-vscode",
+  "js/ts.experimental.useTsgo": true
+}
