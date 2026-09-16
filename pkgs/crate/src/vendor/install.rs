@@ -53,7 +53,7 @@ impl VdmVendor {
                 );
                 let target = VdmSourceInput::parse_manifest_target(key, &entry.version)?;
                 let download =
-                    if let Some(target) = target.as_any().downcast_ref::<VdmSourceGitHubTarget>() {
+                    if let Some(target) = target.as_any().downcast_ref::<VdmGitHubTarget>() {
                         VdmGitHubCache::try_new()?
                             .fetch_revision(target, &entry.revision)
                             .await?

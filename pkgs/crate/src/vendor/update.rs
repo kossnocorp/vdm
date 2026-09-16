@@ -38,11 +38,16 @@ impl VdmVendor {
                 state.paths.manifest.display()
             )
         })?;
-        let requested_version = target.version().clone();
 
         let mut state = state.as_locked().await?;
         let key = target.key().clone();
         let graph = resolve_graph(target).await?;
+        let requested_version = graph
+            .get(&key)
+            .context("Resolved graph is missing its root")?
+            .target
+            .version()
+            .clone();
         let direct = targets.keys().cloned().collect::<BTreeSet<_>>();
 
         if !review {

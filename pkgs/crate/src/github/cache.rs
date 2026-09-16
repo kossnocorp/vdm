@@ -25,26 +25,30 @@ impl VdmGitHubCache {
         })
     }
 
-    pub async fn fetch(&self, target: VdmSourceGitHubTarget) -> Result<VdmSourceFile> {
-        let url = format!("https://github.com/{}/{}.git", target.owner, target.repo);
+    pub async fn fetch(&self, target: VdmGitHubTarget) -> Result<VdmSourceFile> {
+        let url = format!(
+            "https://github.com/{}/{}.git",
+            target.owner(),
+            target.repo()
+        );
         self.fetch_url(target, url).await
     }
 
-    pub(crate) fn repository(&self, target: &VdmSourceGitHubTarget) -> PathBuf {
+    pub(crate) fn repository(&self, target: &VdmGitHubTarget) -> PathBuf {
         self.root
-            .join(&target.owner)
-            .join(format!("{}.git", target.repo))
+            .join(target.owner())
+            .join(format!("{}.git", target.repo()))
     }
 
     pub(crate) async fn fetch_revision(
         &self,
-        target: &VdmSourceGitHubTarget,
+        target: &VdmGitHubTarget,
         revision: &str,
     ) -> Result<VdmSourceFile> {
         self.fetch(target.with_version(revision)).await
     }
 
-    async fn fetch_url(&self, target: VdmSourceGitHubTarget, url: String) -> Result<VdmSourceFile> {
+    async fn fetch_url(&self, target: VdmGitHubTarget, url: String) -> Result<VdmSourceFile> {
         let _permit = FETCH_PERMITS
             .acquire()
             .await
@@ -55,16 +59,12 @@ impl VdmGitHubCache {
             .context("Git cache task failed")?
     }
 
-    fn fetch_url_blocking(
-        &self,
-        target: &VdmSourceGitHubTarget,
-        url: &str,
-    ) -> Result<VdmSourceFile> {
-        let owner_dir = self.root.join(&target.owner);
+    fn fetch_url_blocking(&self, target: &VdmGitHubTarget, url: &str) -> Result<VdmSourceFile> {
+        let owner_dir = self.root.join(target.owner());
         fs::create_dir_all(&owner_dir)
             .with_context(|| format!("Failed to create {}", owner_dir.display()))?;
 
-        let lock_path = owner_dir.join(format!("{}.lock", target.repo));
+        let lock_path = owner_dir.join(format!("{}.lock", target.repo()));
         let lock = OpenOptions::new()
             .create(true)
             .read(true)
@@ -86,13 +86,13 @@ impl VdmGitHubCache {
         };
         configure_origin(&repo, url)?;
 
-        let cached_oid = Oid::from_str(target.version.as_str())
+        let cached_oid = Oid::from_str(target.version().as_str())
             .ok()
             .filter(|oid| repo.find_commit(*oid).is_ok());
         let commit = if let Some(oid) = cached_oid {
             repo.find_commit(oid)?
         } else {
-            let source = resolve_remote_ref(&repo, &target.version)?;
+            let source = resolve_remote_ref(&repo, target.version())?;
             let refspec = format!("+{source}:refs/vdm/fetch");
             git(
                 &repo_path,
@@ -105,11 +105,11 @@ impl VdmGitHubCache {
                     &refspec,
                 ],
             )
-            .with_context(|| format!("Failed to fetch {} from {url}", target.version))?;
+            .with_context(|| format!("Failed to fetch {} from {url}", target.version()))?;
 
             repo.revparse_single("refs/vdm/fetch")?
                 .peel_to_commit()
-                .with_context(|| format!("{} does not resolve to a commit", target.version))?
+                .with_context(|| format!("{} does not resolve to a commit", target.version()))?
         };
         repo.reference(
             &format!("refs/vdm/revisions/{}", commit.id()),
@@ -119,16 +119,18 @@ impl VdmGitHubCache {
         )?;
         let entry = commit
             .tree()?
-            .get_path(Path::new(target.path.as_str()))
-            .with_context(|| format!("{} is not present at commit {}", target.path, commit.id()))?;
+            .get_path(Path::new(target.path()))
+            .with_context(|| {
+                format!("{} is not present at commit {}", target.path(), commit.id())
+            })?;
         let blob_id = entry.id();
         if repo.find_blob(blob_id).is_err() {
             git(&repo_path, &["cat-file", "-e", &blob_id.to_string()])
-                .with_context(|| format!("Failed to fetch contents of {}", target.path))?;
+                .with_context(|| format!("Failed to fetch contents of {}", target.path()))?;
         }
-        let blob = repo
-            .find_blob(blob_id)
-            .with_context(|| format!("{} is not a file at commit {}", target.path, commit.id()))?;
+        let blob = repo.find_blob(blob_id).with_context(|| {
+            format!("{} is not a file at commit {}", target.path(), commit.id())
+        })?;
 
         Ok(VdmSourceFile {
             revision: commit.id().to_string(),
@@ -234,14 +236,11 @@ mod tests {
         let cache = VdmGitHubCache {
             root: temp.path().join("cache"),
         };
-        let parsed = VDM_SOURCE_GITHUB
+        let parsed = VDM_GITHUB_SOURCE
             .parse("gh:owner/repo/file.txt@main")
             .unwrap()
             .unwrap();
-        let target = parsed
-            .as_any()
-            .downcast_ref::<VdmSourceGitHubTarget>()
-            .unwrap();
+        let target = parsed.as_any().downcast_ref::<VdmGitHubTarget>().unwrap();
         let download = cache
             .fetch_url(target.clone(), format!("file://{}", source_path.display()))
             .await

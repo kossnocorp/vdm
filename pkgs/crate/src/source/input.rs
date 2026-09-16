@@ -4,7 +4,7 @@ pub struct VdmSourceInput;
 
 impl VdmSourceInput {
     pub fn parse_target(input: &str) -> Result<Box<dyn VdmTarget>> {
-        let sources: [&'static dyn VdmSource; 2] = [&VDM_SOURCE_GITHUB, &VDM_SOURCE_HTTP];
+        let sources: [&'static dyn VdmSource; 2] = [&VDM_GITHUB_SOURCE, &VDM_HTTP_SOURCE];
         for source in sources {
             if let Some(target) = source.parse(input)? {
                 return Ok(target);
@@ -18,11 +18,7 @@ impl VdmSourceInput {
         key: &VdmManifestTargetUrl,
         version: &VdmManifestSourceVersion,
     ) -> Result<Box<dyn VdmTarget>> {
-        let input = if key.as_str().starts_with("gh:") {
-            format!("{key}@{version}")
-        } else {
-            key.as_str().to_owned()
-        };
+        let input = format!("{key}@{version}");
         let target = Self::parse_target(&input)
             .with_context(|| format!("Invalid manifest target {key:?}"))?;
         ensure!(
@@ -43,13 +39,13 @@ mod tests {
             VdmSourceInput::parse_target("gh:js-fns/js-fns/vitest.config.ts@main")
                 .unwrap()
                 .as_any()
-                .is::<VdmSourceGitHubTarget>()
+                .is::<VdmGitHubTarget>()
         );
         assert!(
             VdmSourceInput::parse_target("https://example.com/assets/file.js")
                 .unwrap()
                 .as_any()
-                .is::<VdmSourceHttpTarget>()
+                .is::<VdmHttpTarget>()
         );
         assert!(VdmSourceInput::parse_target("js-fns/js-fns/file.js@main").is_err());
     }
@@ -65,9 +61,12 @@ mod tests {
 
         let url = "https://example.com/assets/file.js";
         let key = VdmManifestTargetUrl::new(url);
-        let http = VdmSourceInput::parse_manifest_target(&key, &VdmManifestSourceVersion::new(url))
-            .unwrap();
+        let hash = format!("sha256:{}", "a".repeat(64));
+        let http =
+            VdmSourceInput::parse_manifest_target(&key, &VdmManifestSourceVersion::new(&hash))
+                .unwrap();
         assert_eq!(http.key(), &key);
+        assert_eq!(http.version().as_str(), hash);
         assert!(
             VdmSourceInput::parse_manifest_target(&key, &VdmManifestSourceVersion::new("other"))
                 .is_err()

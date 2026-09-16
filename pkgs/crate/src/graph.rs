@@ -17,10 +17,10 @@ pub struct VdmGraphFile {
 pub async fn resolve_graph(
     target: Box<dyn VdmTarget>,
 ) -> Result<BTreeMap<VdmManifestTargetUrl, VdmGraphFile>> {
-    if let Some(target) = target.as_any().downcast_ref::<VdmSourceGitHubTarget>() {
+    if let Some(target) = target.as_any().downcast_ref::<VdmGitHubTarget>() {
         return resolve_github_graph(target.clone()).await;
     }
-    if let Some(target) = target.as_any().downcast_ref::<VdmSourceHttpTarget>() {
+    if let Some(target) = target.as_any().downcast_ref::<VdmHttpTarget>() {
         return resolve_http_graph(target.clone()).await;
     }
 
@@ -37,7 +37,7 @@ pub async fn resolve_graph(
 }
 
 async fn resolve_http_graph(
-    root: VdmSourceHttpTarget,
+    root: VdmHttpTarget,
 ) -> Result<BTreeMap<VdmManifestTargetUrl, VdmGraphFile>> {
     let mut pending = vec![(root, None)];
     let mut files = BTreeMap::new();
@@ -51,6 +51,7 @@ async fn resolve_http_graph(
             Some(download) => download,
             None => target.source().download(&target).await?,
         };
+        let target = target.with_content_version(&download.bytes);
         let final_url = reqwest::Url::parse(&download.revision)
             .with_context(|| format!("Invalid final HTTP URL {:?}", download.revision))?;
         let source_path = Path::new(final_url.path());
@@ -74,7 +75,7 @@ async fn resolve_http_graph(
                 let dependency = VdmSourceInput::parse_target(url.as_str())?;
                 let dependency = dependency
                     .as_any()
-                    .downcast_ref::<VdmSourceHttpTarget>()
+                    .downcast_ref::<VdmHttpTarget>()
                     .context("Resolved HTTP dependency has a different source")?
                     .clone();
                 dependencies.push(dependency.key().clone());
@@ -116,7 +117,7 @@ async fn resolve_http_graph(
                 let dependency = VdmSourceInput::parse_target(url.as_str())?;
                 let dependency = dependency
                     .as_any()
-                    .downcast_ref::<VdmSourceHttpTarget>()
+                    .downcast_ref::<VdmHttpTarget>()
                     .context("Resolved HTTP dependency has a different source")?
                     .clone();
                 dependencies.push(dependency.key().clone());
@@ -140,9 +141,10 @@ async fn resolve_http_graph(
 }
 
 async fn resolve_github_graph(
-    root: VdmSourceGitHubTarget,
+    root: VdmGitHubTarget,
 ) -> Result<BTreeMap<VdmManifestTargetUrl, VdmGraphFile>> {
     let cache = VdmGitHubCache::try_new()?;
+    let root = root.resolve_version().await?;
     let root_download = cache.fetch(root.clone()).await?;
     let revision = root_download.revision.clone();
     let repository = cache.repository(&root);

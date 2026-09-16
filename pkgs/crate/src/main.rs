@@ -15,6 +15,15 @@ pub use lock::*;
 mod source;
 pub use source::*;
 
+mod target;
+pub use target::*;
+
+mod http;
+pub use http::*;
+
+mod github;
+pub use github::*;
+
 mod javascript;
 pub use javascript::*;
 

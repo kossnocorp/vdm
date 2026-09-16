@@ -37,3 +37,4 @@ tokio = { version = "1.53.1", features = ["full"] }
 toml = "0.9.8"
 two-face = { version = "0.5.2", default-features = false, features = ["syntect-default-fancy"] }
 usage = { package = "usage-rs", version = "6" }
+chumsky = "0.13.0"

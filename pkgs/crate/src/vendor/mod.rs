@@ -84,6 +84,63 @@ mod tests {
     use std::fs;
 
     #[tokio::test]
+    async fn http_versions_follow_content_across_add_install_and_update() {
+        use tokio::io::{AsyncReadExt, AsyncWriteExt};
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let address = listener.local_addr().unwrap();
+        let body = std::sync::Arc::new(std::sync::Mutex::new("first"));
+        let server_body = body.clone();
+        let server = tokio::spawn(async move {
+            loop {
+                let (mut stream, _) = listener.accept().await.unwrap();
+                let mut request = [0; 4096];
+                let _read = stream.read(&mut request).await.unwrap();
+                let body = *server_body.lock().unwrap();
+                let response = format!(
+                    "HTTP/1.1 200 OK\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{body}",
+                    body.len()
+                );
+                stream.write_all(response.as_bytes()).await.unwrap();
+            }
+        });
+        let directory = tempfile::tempdir().unwrap();
+        let paths = VdmPaths::resolve(Some(directory.path())).await.unwrap();
+        let url = format!("http://{address}/package@latest/file.txt");
+        let key = VdmManifestTargetUrl::new(&url);
+        VdmVendor::add(Some(directory.path()), &url).await.unwrap();
+        let manifest = VdmManifest::read_toml(&paths.manifest).await.unwrap();
+        let targets = manifest.targets().unwrap();
+        let hash = format!("sha256:{:x}", Sha256::digest(b"first"));
+        assert_eq!(targets[&key].version().as_str(), hash);
+        let lock = VdmLock::read_toml(&paths.lock).await.unwrap();
+        assert_eq!(lock.files[&key].version.as_str(), hash);
+        let destination = paths.target(targets[&key].as_ref());
+        fs::remove_file(&destination).unwrap();
+        VdmVendor::install(Some(directory.path()), false)
+            .await
+            .unwrap();
+        assert_eq!(fs::read(&destination).unwrap(), b"first");
+
+        *body.lock().unwrap() = "second";
+        fs::remove_file(&destination).unwrap();
+        assert!(
+            VdmVendor::install(Some(directory.path()), false)
+                .await
+                .is_err()
+        );
+        VdmVendor::update(Some(directory.path()), &url, false)
+            .await
+            .unwrap();
+        let manifest = VdmManifest::read_toml(&paths.manifest).await.unwrap();
+        assert_eq!(
+            manifest.targets().unwrap()[&key].version().as_str(),
+            format!("sha256:{:x}", Sha256::digest(b"second"))
+        );
+        assert_eq!(fs::read(&destination).unwrap(), b"second");
+        server.abort();
+    }
+
+    #[tokio::test]
     async fn install_removes_files_missing_from_manifest_and_updates_lock() {
         let directory = tempfile::tempdir().unwrap();
         let paths = VdmPaths::resolve(Some(directory.path())).await.unwrap();
