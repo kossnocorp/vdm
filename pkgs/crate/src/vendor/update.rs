@@ -41,16 +41,13 @@ impl VdmVendor {
 
         let mut state = state.as_locked().await?;
         let key = target.key().clone();
+        let glob_target = target.as_any().downcast_ref::<VdmGitHubTarget>().cloned();
         let graph = resolve_graph(target).await?;
-        let requested_version = graph
-            .get(&key)
-            .context("Resolved graph is missing its root")?
-            .target
-            .version()
-            .clone();
+        let requested_version = Self::graph_version(&graph, &key)?.clone();
         let direct = targets.keys().cloned().collect::<BTreeSet<_>>();
 
         if !review {
+            Self::record_glob(&mut state.lock, glob_target.as_ref(), &graph)?;
             let changed = Self::write_graph(&mut state, graph, &direct).await?;
             let removed = Self::prune_unreachable(&mut state, direct.iter().cloned()).await?;
             state.manifest.update(&key, &requested_version)?;
@@ -65,6 +62,7 @@ impl VdmVendor {
         }
 
         let mut hypothetical = state.lock.clone();
+        Self::record_glob(&mut hypothetical, glob_target.as_ref(), &graph)?;
         let mut files = Vec::new();
         for (file_key, file) in graph {
             let destination = state.paths.target(file.target.as_ref());
@@ -72,7 +70,11 @@ impl VdmVendor {
                 file.target.as_ref(),
                 &file.download,
                 &state.paths,
-                direct.contains(&file_key),
+                direct.contains(&file_key)
+                    || hypothetical
+                        .globs
+                        .values()
+                        .any(|members| members.contains(&file_key)),
                 file.dependencies.clone(),
             );
             hypothetical.files.insert(file_key.clone(), next.clone());
@@ -204,6 +206,23 @@ impl VdmVendor {
             }
         }
         if root_accepted {
+            state.manifest.update(&key, &requested_version)?;
+            state.manifest.write_toml(&state.paths.manifest).await?;
+        }
+        if let Some(members) = hypothetical.globs.get(&key)
+            && (changed > 0 || removed > 0)
+        {
+            let mut retained = state.lock.globs.get(&key).cloned().unwrap_or_default();
+            retained.extend(
+                members
+                    .iter()
+                    .filter(|member| state.lock.files.contains_key(*member))
+                    .cloned(),
+            );
+            retained.retain(|member| state.lock.files.contains_key(member));
+            retained.sort();
+            retained.dedup();
+            state.lock.globs.insert(key.clone(), retained);
             state.manifest.update(&key, &requested_version)?;
             state.manifest.write_toml(&state.paths.manifest).await?;
         }

@@ -11,6 +11,38 @@ mod review;
 pub struct VdmVendor;
 
 impl VdmVendor {
+    fn graph_version<'a>(
+        graph: &'a BTreeMap<VdmManifestTargetUrl, VdmGraphFile>,
+        key: &VdmManifestTargetUrl,
+    ) -> Result<&'a VdmManifestSourceVersion> {
+        Ok(graph
+            .get(key)
+            .or_else(|| graph.values().next())
+            .context("Resolved graph is empty")?
+            .target
+            .version())
+    }
+
+    fn record_glob(
+        lock: &mut VdmLock,
+        target: Option<&VdmGitHubTarget>,
+        graph: &BTreeMap<VdmManifestTargetUrl, VdmGraphFile>,
+    ) -> Result<()> {
+        if let Some(target) = target
+            && let Some(matcher) = target.glob()?
+        {
+            let members = graph
+                .iter()
+                .filter_map(|(key, file)| {
+                    let file = file.target.as_any().downcast_ref::<VdmGitHubTarget>()?;
+                    matcher.is_match(file.path()).then(|| key.clone())
+                })
+                .collect();
+            lock.globs.insert(target.key().clone(), members);
+        }
+        Ok(())
+    }
+
     async fn write_graph(
         state: &mut VdmStateLocked,
         graph: BTreeMap<VdmManifestTargetUrl, VdmGraphFile>,
@@ -23,7 +55,12 @@ impl VdmVendor {
                 file.target.as_ref(),
                 &file.download,
                 &state.paths,
-                direct.contains(&key),
+                direct.contains(&key)
+                    || state
+                        .lock
+                        .globs
+                        .values()
+                        .any(|members| members.contains(&key)),
                 file.dependencies,
             );
             let changed = state.lock.files.get(&key) != Some(&next)
@@ -50,6 +87,9 @@ impl VdmVendor {
             if let Some(file) = lock.files.get(&key) {
                 pending.extend(file.dependencies.iter().cloned());
             }
+            if let Some(members) = lock.globs.get(&key) {
+                pending.extend(members.iter().cloned());
+            }
         }
         reachable
     }
@@ -59,6 +99,7 @@ impl VdmVendor {
         roots: impl IntoIterator<Item = VdmManifestTargetUrl>,
     ) -> Result<usize> {
         let reachable = Self::reachable(&state.lock, roots);
+        state.lock.globs.retain(|key, _| reachable.contains(key));
         let stale = state
             .lock
             .files
@@ -82,6 +123,108 @@ impl VdmVendor {
 mod tests {
     use crate::prelude::*;
     use std::fs;
+
+    #[tokio::test]
+    async fn github_globs_add_restore_overlap_and_update() {
+        // Seed the Git cache with local commits so the full vendor workflow is
+        // exercised without depending on GitHub or mutating process environment.
+        let cache = VdmGitHubCache::try_new().unwrap();
+        let placeholder = VdmSourceInput::parse_target("gh:fixture/repo/**/*.sh").unwrap();
+        let repository = cache.repository(
+            placeholder
+                .as_any()
+                .downcast_ref::<VdmGitHubTarget>()
+                .unwrap(),
+        );
+        let cache_root = repository.parent().unwrap().parent().unwrap();
+        fs::create_dir_all(cache_root).unwrap();
+        let owner_dir = tempfile::Builder::new()
+            .prefix("vdm-test-")
+            .tempdir_in(cache_root)
+            .unwrap();
+        let owner = owner_dir.path().file_name().unwrap().to_str().unwrap();
+        let repo = git2::Repository::init_bare(owner_dir.path().join("repo.git")).unwrap();
+        let commit = |name: &str, bytes: &[u8]| {
+            let mut nested = repo.treebuilder(None).unwrap();
+            nested
+                .insert(name, repo.blob(bytes).unwrap(), 0o100644)
+                .unwrap();
+            let mut root = repo.treebuilder(None).unwrap();
+            root.insert("nested", nested.write().unwrap(), 0o040000)
+                .unwrap();
+            root.insert("root.sh", repo.blob(b"root").unwrap(), 0o100644)
+                .unwrap();
+            root.insert("ignore.txt", repo.blob(b"ignored").unwrap(), 0o100644)
+                .unwrap();
+            let tree = repo.find_tree(root.write().unwrap()).unwrap();
+            let signature = git2::Signature::now("Test", "test@example.com").unwrap();
+            repo.commit(None, &signature, &signature, name, &tree, &[])
+                .unwrap()
+                .to_string()
+        };
+        let first = commit("a.sh", b"first");
+        let second = commit("b.sh", b"second");
+        let directory = tempfile::tempdir().unwrap();
+        let paths = VdmPaths::resolve(Some(directory.path())).await.unwrap();
+        let key = VdmManifestTargetUrl::new(format!("gh:{owner}/repo/**/*.sh"));
+        VdmVendor::add(Some(directory.path()), &format!("{key}@{first}"))
+            .await
+            .unwrap();
+        let manifest = VdmManifest::read_toml(&paths.manifest).await.unwrap();
+        assert_eq!(manifest.targets().unwrap()[&key].version().as_str(), first);
+        let lock = VdmLock::read_toml(&paths.lock).await.unwrap();
+        assert_eq!(lock.globs[&key].len(), 2);
+        let nested = directory
+            .path()
+            .join(format!("vendor/@{owner}/repo/nested"));
+        fs::remove_file(nested.join("a.sh")).unwrap();
+        assert!(
+            VdmVendor::install(Some(directory.path()), true)
+                .await
+                .is_err()
+        );
+        VdmVendor::install(Some(directory.path()), false)
+            .await
+            .unwrap();
+        assert_eq!(fs::read(nested.join("a.sh")).unwrap(), b"first");
+        assert!(
+            !directory
+                .path()
+                .join(format!("vendor/@{owner}/repo/ignore.txt"))
+                .exists()
+        );
+
+        let overlapping = VdmManifestTargetUrl::new(format!("gh:{owner}/repo/nested/*.sh"));
+        VdmVendor::add(Some(directory.path()), &format!("{overlapping}@{first}"))
+            .await
+            .unwrap();
+        let mut manifest = VdmManifest::new();
+        manifest.add(&overlapping, &VdmManifestSourceVersion::new(&first));
+        manifest.write_toml(&paths.manifest).await.unwrap();
+        VdmVendor::install(Some(directory.path()), true)
+            .await
+            .unwrap();
+        assert!(nested.join("a.sh").is_file());
+        assert!(!nested.parent().unwrap().join("root.sh").exists());
+
+        VdmVendor::update(
+            Some(directory.path()),
+            &format!("{overlapping}@{second}"),
+            false,
+        )
+        .await
+        .unwrap();
+        assert!(!nested.join("a.sh").exists());
+        assert_eq!(fs::read(nested.join("b.sh")).unwrap(), b"second");
+        let lock = VdmLock::read_toml(&paths.lock).await.unwrap();
+        assert_eq!(lock.globs.len(), 1);
+        assert_eq!(lock.globs[&overlapping].len(), 1);
+        assert_eq!(lock.files.len(), 1);
+        assert_eq!(lock.files.values().next().unwrap().revision, second);
+        VdmVendor::install(Some(directory.path()), true)
+            .await
+            .unwrap();
+    }
 
     #[tokio::test]
     async fn http_versions_follow_content_across_add_install_and_update() {

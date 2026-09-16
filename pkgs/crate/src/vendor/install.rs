@@ -19,6 +19,21 @@ impl VdmVendor {
         let reachable = Self::reachable(&state.lock, roots.iter().cloned());
         let mut complete = true;
         for key in &roots {
+            if let Some(members) = state.lock.globs.get(key) {
+                if members.is_empty()
+                    || members.iter().any(|member| {
+                        state
+                            .lock
+                            .files
+                            .get(member)
+                            .is_none_or(|entry| targets[key].version() != &entry.version)
+                    })
+                {
+                    complete = false;
+                    break;
+                }
+                continue;
+            }
             let Some(entry) = state.lock.files.get(key) else {
                 complete = false;
                 break;
@@ -33,7 +48,7 @@ impl VdmVendor {
             }
         }
         for key in &reachable {
-            if !state.lock.files.contains_key(key) {
+            if !state.lock.files.contains_key(key) && !state.lock.globs.contains_key(key) {
                 complete = false;
                 break;
             }
@@ -42,6 +57,9 @@ impl VdmVendor {
         let mut installed = 0;
         if complete {
             for key in &reachable {
+                if state.lock.globs.contains_key(key) {
+                    continue;
+                }
                 let entry = &state.lock.files[key];
                 let destination = Self::lock_destination(&state.paths, &entry.path)?;
                 if Self::file_matches(&destination, &entry.hash).await? {
@@ -75,7 +93,10 @@ impl VdmVendor {
             );
             let mut graph: BTreeMap<VdmManifestTargetUrl, VdmGraphFile> = BTreeMap::new();
             for (_, target) in targets {
-                for (key, file) in resolve_graph(target).await? {
+                let glob_target = target.as_any().downcast_ref::<VdmGitHubTarget>().cloned();
+                let resolved = resolve_graph(target).await?;
+                Self::record_glob(&mut state.lock, glob_target.as_ref(), &resolved)?;
+                for (key, file) in resolved {
                     if let Some(existing) = graph.get(&key) {
                         ensure!(
                             existing.download.revision == file.download.revision

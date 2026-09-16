@@ -71,6 +71,21 @@ impl VdmGitHubTarget {
         self.path.as_str()
     }
 
+    pub(crate) fn glob(&self) -> Result<Option<globset::GlobMatcher>> {
+        if !self.path().contains(['*', '?', '[', '{']) {
+            return Ok(None);
+        }
+
+        Ok(Some(
+            globset::GlobBuilder::new(self.path())
+                .literal_separator(true)
+                .backslash_escape(false)
+                .build()
+                .with_context(|| format!("Invalid GitHub glob {:?}", self.path()))?
+                .compile_matcher(),
+        ))
+    }
+
     pub(crate) async fn resolve_version(self) -> Result<Self> {
         if self.version.as_str() != "HEAD" {
             return Ok(self);

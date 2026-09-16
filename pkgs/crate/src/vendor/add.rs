@@ -20,8 +20,21 @@ impl VdmVendor {
         let mut state = state.as_locked().await?;
 
         let key = target.key().clone();
-        let destination = state.paths.target(target.as_ref());
+        let mut destination = state.paths.target(target.as_ref());
+        let glob_target = target.as_any().downcast_ref::<VdmGitHubTarget>().cloned();
+        if let Some(target) = &glob_target
+            && target.glob()?.is_some()
+        {
+            destination = state
+                .paths
+                .root
+                .join("vendor")
+                .join(format!("@{}", target.owner()))
+                .join(target.repo());
+        }
         let graph = resolve_graph(target).await?;
+        let version = Self::graph_version(&graph, &key)?.clone();
+        Self::record_glob(&mut state.lock, glob_target.as_ref(), &graph)?;
         let mut direct = targets.keys().cloned().collect::<BTreeSet<_>>();
         direct.insert(key.clone());
         for (graph_key, file) in &graph {
@@ -36,12 +49,7 @@ impl VdmVendor {
         }
         let added = Self::write_graph(&mut state, graph, &direct).await?;
 
-        let root = state
-            .lock
-            .files
-            .get(&key)
-            .context("Resolved graph is missing its root")?;
-        state.manifest.add(&key, &root.version);
+        state.manifest.add(&key, &version);
         state.manifest.write_toml(&state.paths.manifest).await?;
         state.lock.write_toml(&state.paths.lock).await?;
 

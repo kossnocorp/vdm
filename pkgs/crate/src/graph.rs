@@ -145,8 +145,8 @@ async fn resolve_github_graph(
 ) -> Result<BTreeMap<VdmManifestTargetUrl, VdmGraphFile>> {
     let cache = VdmGitHubCache::try_new()?;
     let root = root.resolve_version().await?;
-    let root_download = cache.fetch(root.clone()).await?;
-    let revision = root_download.revision.clone();
+    let downloads = cache.fetch_files(root.clone()).await?;
+    let revision = downloads[0].1.revision.clone();
     let repository = cache.repository(&root);
     let resolver = Arc::new(GitResolver::new(repository, revision.clone()));
     let rust_file_system = GitFileSystem {
@@ -155,7 +155,10 @@ async fn resolve_github_graph(
         root: PathBuf::from("/vdm"),
     };
     let mut rust_resolver = None;
-    let mut pending = vec![(root, Some(root_download))];
+    let mut pending = downloads
+        .into_iter()
+        .map(|(target, download)| (target, Some(download)))
+        .collect::<Vec<_>>();
     let mut files = BTreeMap::new();
 
     while let Some((target, downloaded)) = pending.pop() {

@@ -40,9 +40,9 @@ impl VdmGithubSource {
         let path = VdmManifestTargetPath::new(path);
         let version = VdmManifestSourceVersion::new(version);
 
-        Ok(Some(Box::new(VdmGitHubTarget::new(
-            owner, repo, path, version,
-        ))))
+        let target = VdmGitHubTarget::new(owner, repo, path, version);
+        target.glob()?;
+        Ok(Some(Box::new(target)))
     }
 
     fn parse(input: &str) -> Option<(&str, &str, &str, Option<&str>)> {
@@ -114,6 +114,13 @@ mod tests {
 
     #[test]
     fn parses_github_paths_and_optional_refs() {
+        let glob = VDM_GITHUB_SOURCE
+            .parse("gh:omacom/omarchy/**/*.sh")
+            .unwrap()
+            .unwrap();
+        assert_eq!(glob.key().as_str(), "gh:omacom/omarchy/**/*.sh");
+        assert_eq!(glob.version().as_str(), "HEAD");
+        assert!(VDM_GITHUB_SOURCE.parse("gh:owner/repo/[broken").is_err());
         assert_eq!(
             VdmGithubSource::parse("gh:owner/repo/path/file"),
             Some(("owner", "repo", "path/file", None))

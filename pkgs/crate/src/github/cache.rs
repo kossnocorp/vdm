@@ -26,6 +26,15 @@ impl VdmGitHubCache {
     }
 
     pub async fn fetch(&self, target: VdmGitHubTarget) -> Result<VdmSourceFile> {
+        let mut files = self.fetch_files(target).await?;
+        ensure!(files.len() == 1, "Expected a single GitHub file");
+        Ok(files.remove(0).1)
+    }
+
+    pub(crate) async fn fetch_files(
+        &self,
+        target: VdmGitHubTarget,
+    ) -> Result<Vec<(VdmGitHubTarget, VdmSourceFile)>> {
         let url = format!(
             "https://github.com/{}/{}.git",
             target.owner(),
@@ -48,7 +57,11 @@ impl VdmGitHubCache {
         self.fetch(target.with_version(revision)).await
     }
 
-    async fn fetch_url(&self, target: VdmGitHubTarget, url: String) -> Result<VdmSourceFile> {
+    async fn fetch_url(
+        &self,
+        target: VdmGitHubTarget,
+        url: String,
+    ) -> Result<Vec<(VdmGitHubTarget, VdmSourceFile)>> {
         let _permit = FETCH_PERMITS
             .acquire()
             .await
@@ -59,7 +72,11 @@ impl VdmGitHubCache {
             .context("Git cache task failed")?
     }
 
-    fn fetch_url_blocking(&self, target: &VdmGitHubTarget, url: &str) -> Result<VdmSourceFile> {
+    fn fetch_url_blocking(
+        &self,
+        target: &VdmGitHubTarget,
+        url: &str,
+    ) -> Result<Vec<(VdmGitHubTarget, VdmSourceFile)>> {
         let owner_dir = self.root.join(target.owner());
         fs::create_dir_all(&owner_dir)
             .with_context(|| format!("Failed to create {}", owner_dir.display()))?;
@@ -117,25 +134,82 @@ impl VdmGitHubCache {
             true,
             "retain revision for vdm cache",
         )?;
-        let entry = commit
-            .tree()?
-            .get_path(Path::new(target.path()))
-            .with_context(|| {
-                format!("{} is not present at commit {}", target.path(), commit.id())
+        let tree = commit.tree()?;
+        let mut paths = Vec::new();
+        if let Some(matcher) = target.glob()? {
+            tree.walk(git2::TreeWalkMode::PreOrder, |directory, entry| {
+                if entry.kind() == Some(git2::ObjectType::Blob)
+                    && let Some(name) = entry.name()
+                {
+                    let path = format!("{directory}{name}");
+                    if matcher.is_match(&path) {
+                        paths.push(path);
+                    }
+                }
+                git2::TreeWalkResult::Ok
             })?;
-        let blob_id = entry.id();
-        if repo.find_blob(blob_id).is_err() {
-            git(&repo_path, &["cat-file", "-e", &blob_id.to_string()])
-                .with_context(|| format!("Failed to fetch contents of {}", target.path()))?;
+            ensure!(
+                !paths.is_empty(),
+                "GitHub glob {} matched no files at commit {}",
+                target.path(),
+                commit.id()
+            );
+            paths.sort();
+        } else {
+            paths.push(target.path().to_owned());
         }
-        let blob = repo.find_blob(blob_id).with_context(|| {
-            format!("{} is not a file at commit {}", target.path(), commit.id())
-        })?;
+        // Partial clones initially contain only trees. Fetch missing blobs in
+        // batches rather than paying for a network round trip for every match.
+        let mut missing = BTreeSet::new();
+        for path in &paths {
+            let entry = tree
+                .get_path(Path::new(path))
+                .with_context(|| format!("{path} is not present at commit {}", commit.id()))?;
+            ensure!(
+                entry.kind() == Some(git2::ObjectType::Blob),
+                "{path} is not a file at commit {}",
+                commit.id()
+            );
+            if repo.find_blob(entry.id()).is_err() {
+                missing.insert(entry.id().to_string());
+            }
+        }
+        let missing = missing.into_iter().collect::<Vec<_>>();
+        for batch in missing.chunks(128) {
+            let mut args = vec![
+                "-c",
+                "fetch.negotiationAlgorithm=noop",
+                "fetch",
+                "--no-tags",
+                "--no-write-fetch-head",
+                "--recurse-submodules=no",
+                "--filter=blob:none",
+                "origin",
+            ];
+            args.extend(batch.iter().map(String::as_str));
+            git(&repo_path, &args).context("Failed to fetch GitHub file contents")?;
+        }
+        paths
+            .into_iter()
+            .map(|path| {
+                let target = target.with_path(Path::new(&path))?;
+                let entry = tree.get_path(Path::new(target.path())).with_context(|| {
+                    format!("{} is not present at commit {}", target.path(), commit.id())
+                })?;
+                let blob_id = entry.id();
+                let blob = repo.find_blob(blob_id).with_context(|| {
+                    format!("{} is not a file at commit {}", target.path(), commit.id())
+                })?;
 
-        Ok(VdmSourceFile {
-            revision: commit.id().to_string(),
-            bytes: blob.content().to_vec(),
-        })
+                Ok((
+                    target,
+                    VdmSourceFile {
+                        revision: commit.id().to_string(),
+                        bytes: blob.content().to_vec(),
+                    },
+                ))
+            })
+            .collect()
     }
 }
 
@@ -217,8 +291,14 @@ mod tests {
             .set_bool("uploadpack.allowFilter", true)
             .unwrap();
         fs::write(source_path.join("file.txt"), "first\n").unwrap();
+        fs::create_dir_all(source_path.join("nested/deep")).unwrap();
+        for path in ["root.sh", "nested/a.sh", "nested/deep/b.sh"] {
+            fs::write(source_path.join(path), path).unwrap();
+        }
         let mut index = source.index().unwrap();
-        index.add_path(Path::new("file.txt")).unwrap();
+        index
+            .add_all(["*"], git2::IndexAddOption::DEFAULT, None)
+            .unwrap();
         let tree_id = index.write_tree().unwrap();
         let tree = source.find_tree(tree_id).unwrap();
         let signature = Signature::now("Vdm Test", "vdm@example.com").unwrap();
@@ -246,8 +326,85 @@ mod tests {
             .await
             .unwrap();
 
-        assert_eq!(download.bytes, b"first\n");
+        assert_eq!(download[0].1.bytes, b"first\n");
         assert!(cache.root.join("owner/repo.git").is_dir());
         assert!(!cache.root.join("owner/repo.git/file.txt").exists());
+
+        let glob = target.with_path(Path::new("**/*.sh")).unwrap();
+        let matches = cache
+            .fetch_url(glob.clone(), format!("file://{}", source_path.display()))
+            .await
+            .unwrap();
+        assert_eq!(
+            matches
+                .iter()
+                .map(|(target, _)| target.path())
+                .collect::<Vec<_>>(),
+            ["nested/a.sh", "nested/deep/b.sh", "root.sh"]
+        );
+        for (target, file) in &matches {
+            assert_eq!(file.bytes, target.path().as_bytes());
+            assert_eq!(file.revision, download[0].1.revision);
+        }
+        let shallow = cache
+            .fetch_url(
+                target.with_path(Path::new("*.sh")).unwrap(),
+                format!("file://{}", source_path.display()),
+            )
+            .await
+            .unwrap();
+        assert_eq!(shallow.len(), 1);
+        assert_eq!(shallow[0].0.path(), "root.sh");
+        assert!(
+            cache
+                .fetch_url(
+                    target.with_path(Path::new("**/*.missing")).unwrap(),
+                    format!("file://{}", source_path.display())
+                )
+                .await
+                .is_err()
+        );
+
+        let paths = VdmPaths::resolve(Some(temp.path())).await.unwrap();
+        let mut manifest = VdmManifest::new();
+        manifest.add(glob.key(), glob.version());
+        manifest.write_toml(&paths.manifest).await.unwrap();
+        let mut lock = VdmLock::default();
+        let mut members = Vec::new();
+        for (target, download) in matches {
+            download.write(&paths.target(&target)).await.unwrap();
+            members.push(target.key().clone());
+            lock.files.insert(
+                target.key().clone(),
+                VdmLockFile::new(&target, &download, &paths, true, Vec::new()),
+            );
+        }
+        lock.globs.insert(glob.key().clone(), members);
+        lock.write_toml(&paths.lock).await.unwrap();
+        let serialized = fs::read_to_string(&paths.lock).unwrap();
+        let document: toml::Value = toml::from_str(&serialized).unwrap();
+        assert_eq!(
+            document["files"][glob.key().as_str()]
+                .as_array()
+                .unwrap()
+                .len(),
+            3
+        );
+        assert_eq!(document["files"].as_table().unwrap().len(), 1);
+        let restored = VdmLock::read_toml(&paths.lock).await.unwrap();
+        assert_eq!(restored.files, lock.files);
+        assert_eq!(restored.globs, lock.globs);
+        VdmVendor::install(Some(temp.path()), true).await.unwrap();
+        assert!(
+            temp.path()
+                .join("vendor/@owner/repo/nested/deep/b.sh")
+                .is_file()
+        );
+        VdmManifest::new()
+            .write_toml(&paths.manifest)
+            .await
+            .unwrap();
+        VdmVendor::install(Some(temp.path()), true).await.unwrap();
+        assert!(!temp.path().join("vendor/@owner").exists());
     }
 }
