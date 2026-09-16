@@ -1,14 +1,14 @@
 use crate::prelude::*;
 
-pub struct VitStateLocked {
-    pub dirs: VitDirs,
-    pub paths: VitPaths,
-    pub manifest: VitManifest,
-    pub lock: VitLock,
+pub struct VdmStateLocked {
+    pub dirs: VdmDirs,
+    pub paths: VdmPaths,
+    pub manifest: VdmManifest,
+    pub lock: VdmLock,
 }
 
-impl From<VitStateLocked> for VitState {
-    fn from(state: VitStateLocked) -> VitState {
-        VitState::Locked(state)
+impl From<VdmStateLocked> for VdmState {
+    fn from(state: VdmStateLocked) -> VdmState {
+        VdmState::Locked(state)
     }
 }

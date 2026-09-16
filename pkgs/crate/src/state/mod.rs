@@ -12,47 +12,47 @@ pub use initialized::*;
 mod locked;
 pub use locked::*;
 
-pub enum VitState {
-    Initializing(VitStateInitializing),
-    Errored(VitStateErrored),
-    Initialized(VitStateInitialized),
-    Locked(VitStateLocked),
+pub enum VdmState {
+    Initializing(VdmStateInitializing),
+    Errored(VdmStateErrored),
+    Initialized(VdmStateInitialized),
+    Locked(VdmStateLocked),
 }
 
-impl VitState {
+impl VdmState {
     pub fn create() -> Self {
-        VitStateInitializing::create_state()
+        VdmStateInitializing::create_state()
     }
 
-    pub async fn initialize(self, path: Option<&Path>) -> Result<VitState> {
+    pub async fn initialize(self, path: Option<&Path>) -> Result<VdmState> {
         match self {
-            VitState::Errored(_) => {
+            VdmState::Errored(_) => {
                 // Nothing to do, already in errored state
                 Ok(self)
             }
 
-            VitState::Initializing(state) => state.as_initialized_state(path).await,
+            VdmState::Initializing(state) => state.as_initialized_state(path).await,
 
-            VitState::Initialized(_) | VitState::Locked(_) => {
+            VdmState::Initialized(_) | VdmState::Locked(_) => {
                 bail!("Already initialized")
             }
         }
     }
 
-    pub async fn initialize_lock(self) -> Result<VitState> {
+    pub async fn initialize_lock(self) -> Result<VdmState> {
         match self {
-            VitState::Errored(_) => {
+            VdmState::Errored(_) => {
                 // Nothing to do, already in errored state
                 Ok(self)
             }
 
-            VitState::Initializing(_) => {
+            VdmState::Initializing(_) => {
                 bail!("Cannot load lock while initializing")
             }
 
-            VitState::Initialized(state) => Ok(state.as_locked().await?.into()),
+            VdmState::Initialized(state) => Ok(state.as_locked().await?.into()),
 
-            VitState::Locked(_) => {
+            VdmState::Locked(_) => {
                 bail!("Already in locked state")
             }
         }

@@ -1,11 +1,11 @@
 use crate::prelude::*;
 
-pub struct VitDirs(#[allow(dead_code)] ProjectDirs);
+pub struct VdmDirs(#[allow(dead_code)] ProjectDirs);
 
-impl VitDirs {
+impl VdmDirs {
     pub fn resolve() -> Result<Self> {
-        let dirs = ProjectDirs::from("org", "vendorit", "vit")
-            .with_context(|| "Failed to resolve Vit dirs")?;
+        let dirs =
+            ProjectDirs::from("fyi", "vdm", "vdm").with_context(|| "Failed to resolve Vdm dirs")?;
         Ok(Self(dirs))
     }
 }

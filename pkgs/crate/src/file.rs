@@ -4,7 +4,7 @@ use tempfile::NamedTempFile;
 use tokio::io::AsyncWriteExt;
 
 #[async_trait]
-pub trait VitFileToml
+pub trait VdmFileToml
 where
     Self: for<'de> Deserialize<'de> + Serialize + Default + Sync,
 {
@@ -29,7 +29,7 @@ where
 }
 
 #[async_trait]
-pub trait VitFileWritable: Sync {
+pub trait VdmFileWritable: Sync {
     fn bytes(&self) -> &[u8];
 
     async fn write(&self, path: &Path) -> Result<()> {

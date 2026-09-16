@@ -1,15 +1,15 @@
 use crate::prelude::*;
 
-pub struct VitStateInitialized {
-    pub dirs: VitDirs,
-    pub paths: VitPaths,
-    pub manifest: VitManifest,
+pub struct VdmStateInitialized {
+    pub dirs: VdmDirs,
+    pub paths: VdmPaths,
+    pub manifest: VdmManifest,
 }
 
-impl VitStateInitialized {
-    pub async fn as_locked(self) -> Result<VitStateLocked> {
-        let lock = VitLock::read_toml(&self.paths.lock).await?;
-        Ok(VitStateLocked {
+impl VdmStateInitialized {
+    pub async fn as_locked(self) -> Result<VdmStateLocked> {
+        let lock = VdmLock::read_toml(&self.paths.lock).await?;
+        Ok(VdmStateLocked {
             dirs: self.dirs,
             paths: self.paths,
             manifest: self.manifest,
@@ -18,8 +18,8 @@ impl VitStateInitialized {
     }
 }
 
-impl From<VitStateInitialized> for VitState {
-    fn from(val: VitStateInitialized) -> Self {
-        VitState::Initialized(val)
+impl From<VdmStateInitialized> for VdmState {
+    fn from(val: VdmStateInitialized) -> Self {
+        VdmState::Initialized(val)
     }
 }

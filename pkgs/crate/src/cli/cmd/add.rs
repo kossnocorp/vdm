@@ -1,18 +1,18 @@
 use crate::cli::prelude::*;
 
 #[derive(Args)]
-pub struct VitCliCmdAdd {
+pub struct VdmCliCmdAdd {
     #[usage(flatten)]
-    manifest_args: VitCliArgsManifest,
+    manifest_args: VdmCliArgsManifest,
 
     #[usage(value_name = "FILE")]
     file: String,
 }
 
-impl RunAsync for VitCliCmdAdd {
+impl RunAsync for VdmCliCmdAdd {
     type Output = Result<()>;
 
     async fn run_async(self) -> Self::Output {
-        VitVendor::add(self.manifest_args.manifest.as_deref(), &self.file).await
+        VdmVendor::add(self.manifest_args.manifest.as_deref(), &self.file).await
     }
 }

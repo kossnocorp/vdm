@@ -6,7 +6,7 @@ body = """
     ## Unreleased
 {% endif %}\
 {% for commit in commits %}
-    - {{ commit.message }} ([{{ commit.id | truncate(length=7, end="") }}](https://github.com/kossnocorp/vit/commit/{{ commit.id }}))\
+    - {{ commit.message }} ([{{ commit.id | truncate(length=7, end="") }}](https://github.com/kossnocorp/vdm/commit/{{ commit.id }}))\
 {% endfor %}
 """
 trim = true

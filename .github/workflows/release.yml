@@ -39,7 +39,7 @@ jobs:
       - name: Download Build Artifacts
         uses: actions/download-artifact@v6
         with:
-          pattern: "vit-${{ github.ref_name }}-*"
+          pattern: "vdm-${{ github.ref_name }}-*"
           path: downloaded-artifacts
 
       - name: Collect Release Assets

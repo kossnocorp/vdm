@@ -1,28 +1,28 @@
 use crate::prelude::*;
 
 #[derive(Debug, Deserialize, Serialize, PartialEq, Clone)]
-pub struct VitLockFile {
+pub struct VdmLockFile {
     pub direct: bool,
-    pub version: VitManifestSourceVersion,
+    pub version: VdmManifestSourceVersion,
     pub revision: String,
     pub hash: String,
     pub source: String,
     pub path: String,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
-    pub dependencies: Vec<VitManifestTargetUrl>,
+    pub dependencies: Vec<VdmManifestTargetUrl>,
 }
 
-impl VitLockFile {
+impl VdmLockFile {
     pub fn new(
-        target: &dyn VitTarget,
-        download: &VitSourceFile,
-        paths: &VitPaths,
+        target: &dyn VdmTarget,
+        download: &VdmSourceFile,
+        paths: &VdmPaths,
         direct: bool,
-        dependencies: Vec<VitManifestTargetUrl>,
-    ) -> VitLockFile {
+        dependencies: Vec<VdmManifestTargetUrl>,
+    ) -> VdmLockFile {
         let hash = Sha256::digest(&download.bytes);
         let path = paths.target(target);
-        VitLockFile {
+        VdmLockFile {
             direct,
             version: target.version().clone(),
             revision: download.revision.clone(),

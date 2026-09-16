@@ -1,10 +1,10 @@
 compatibility_date = "2026-04-09"
 compatibility_flags = ["global_fetch_strictly_public", "nodejs_compat"]
-name = "vit-website"
+name = "vdm-website"
 main = "@astrojs/cloudflare/entrypoints/server"
 
 [[routes]]
-pattern = "vit.fyi"
+pattern = "vdm.fyi"
 custom_domain = true
 
 [assets]

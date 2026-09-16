@@ -1,16 +1,16 @@
 use crate::prelude::*;
 
-pub struct VitPaths {
+pub struct VdmPaths {
     pub root: PathBuf,
     pub manifest: PathBuf,
     pub lock: PathBuf,
 }
 
-impl VitPaths {
+impl VdmPaths {
     pub async fn resolve(path: Option<&Path>) -> Result<Self> {
         let manifest = Self::resolve_manifest_path(path)
             .await
-            .with_context(|| "Failed to resolve Vit paths")?;
+            .with_context(|| "Failed to resolve Vdm paths")?;
 
         Ok(Self::from_manifest(manifest))
     }
@@ -73,7 +73,7 @@ impl VitPaths {
         Ok(start.join("vendor.toml"))
     }
 
-    pub fn target(&self, target: &dyn VitTarget) -> PathBuf {
+    pub fn target(&self, target: &dyn VdmTarget) -> PathBuf {
         self.root.join("vendor").join(target.vendor_path())
     }
 }
@@ -92,9 +92,9 @@ mod tests {
         fs::write(directory.path().join("vendor.toml"), "").unwrap();
         fs::write(parent.join("vendor.toml"), "").unwrap();
 
-        let manifest = VitPaths::discover_manifest_path(&nested).await.unwrap();
-        let paths = VitPaths::from_manifest(manifest);
-        let target = VitSourceInput::parse_target("gh:js-fns/js-fns/src/file.ts@main").unwrap();
+        let manifest = VdmPaths::discover_manifest_path(&nested).await.unwrap();
+        let paths = VdmPaths::from_manifest(manifest);
+        let target = VdmSourceInput::parse_target("gh:js-fns/js-fns/src/file.ts@main").unwrap();
 
         assert_eq!(paths.manifest, parent.join("vendor.toml"));
         assert_eq!(paths.root, parent);
@@ -111,7 +111,7 @@ mod tests {
         let nested = directory.path().join("nested");
         fs::create_dir(&nested).unwrap();
 
-        let manifest = VitPaths::discover_manifest_path(&nested).await.unwrap();
+        let manifest = VdmPaths::discover_manifest_path(&nested).await.unwrap();
 
         assert_eq!(manifest, nested.join("vendor.toml"));
     }
@@ -123,7 +123,7 @@ mod tests {
         fs::create_dir(&nested).unwrap();
         fs::write(directory.path().join("vendor.toml"), "").unwrap();
 
-        let paths = VitPaths::resolve(Some(&nested)).await.unwrap();
+        let paths = VdmPaths::resolve(Some(&nested)).await.unwrap();
 
         assert_eq!(paths.manifest, nested.join("vendor.toml"));
         assert_eq!(paths.root, nested);

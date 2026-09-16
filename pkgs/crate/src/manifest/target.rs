@@ -3,9 +3,9 @@ use crate::prelude::*;
 /// Target URL, e.g., "gh:kossnocorp/dev/mise.toml" or "gh:kossnocorp/dev".
 #[derive(Clone, Debug, Deserialize, Serialize, PartialEq, Eq, Hash, PartialOrd, Ord)]
 #[serde(transparent)]
-pub struct VitManifestTargetUrl(String);
+pub struct VdmManifestTargetUrl(String);
 
-impl VitManifestTargetUrl {
+impl VdmManifestTargetUrl {
     pub fn new(url: impl AsRef<str>) -> Self {
         Self(url.as_ref().to_owned())
     }
@@ -14,7 +14,7 @@ impl VitManifestTargetUrl {
         &self.0
     }
 
-    pub fn join(&self, path: &VitManifestTargetPath) -> Result<Self> {
+    pub fn join(&self, path: &VdmManifestTargetPath) -> Result<Self> {
         ensure!(!self.0.is_empty(), "Manifest target URL must not be empty");
         ensure!(!path.0.is_empty(), "Manifest target path must not be empty");
         ensure!(
@@ -28,18 +28,18 @@ impl VitManifestTargetUrl {
     }
 }
 
-impl std::fmt::Display for VitManifestTargetUrl {
+impl std::fmt::Display for VdmManifestTargetUrl {
     fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         self.0.fmt(formatter)
     }
 }
 
-/// Target path that can be joined with [VitManifestTargetUrl], e.g., "mise.toml".
+/// Target path that can be joined with [VdmManifestTargetUrl], e.g., "mise.toml".
 #[derive(Clone, Debug, Deserialize, Serialize, PartialEq, Eq, Hash, PartialOrd, Ord)]
 #[serde(transparent)]
-pub struct VitManifestTargetPath(String);
+pub struct VdmManifestTargetPath(String);
 
-impl VitManifestTargetPath {
+impl VdmManifestTargetPath {
     pub fn new(path: impl AsRef<str>) -> Self {
         Self(path.as_ref().to_owned())
     }
@@ -49,7 +49,7 @@ impl VitManifestTargetPath {
     }
 }
 
-impl std::fmt::Display for VitManifestTargetPath {
+impl std::fmt::Display for VdmManifestTargetPath {
     fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         self.0.fmt(formatter)
     }

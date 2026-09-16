@@ -15,22 +15,22 @@ mod file;
 pub use file::*;
 
 #[async_trait]
-pub trait VitSource: Send + Sync {
-    fn parse(&self, input: &str) -> Result<Option<Box<dyn VitTarget>>>;
+pub trait VdmSource: Send + Sync {
+    fn parse(&self, input: &str) -> Result<Option<Box<dyn VdmTarget>>>;
 
-    async fn download(&self, target: &dyn VitTarget) -> Result<VitSourceFile>;
+    async fn download(&self, target: &dyn VdmTarget) -> Result<VdmSourceFile>;
 }
 
-pub trait VitTarget: Any + Send + Sync {
-    fn key(&self) -> &VitManifestTargetUrl;
+pub trait VdmTarget: Any + Send + Sync {
+    fn key(&self) -> &VdmManifestTargetUrl;
 
-    fn version(&self) -> &VitManifestSourceVersion;
+    fn version(&self) -> &VdmManifestSourceVersion;
 
     fn source_url(&self) -> &str;
 
     fn vendor_path(&self) -> PathBuf;
 
-    fn source(&self) -> &'static dyn VitSource;
+    fn source(&self) -> &'static dyn VdmSource;
 
     fn as_any(&self) -> &dyn Any;
 }

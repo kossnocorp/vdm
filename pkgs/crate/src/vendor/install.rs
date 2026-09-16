@@ -2,16 +2,16 @@ use crate::prelude::*;
 
 use tokio::io::AsyncReadExt;
 
-impl VitVendor {
+impl VdmVendor {
     pub async fn install(manifest_path: Option<&Path>, offline: bool) -> Result<()> {
-        let state = VitState::create()
+        let state = VdmState::create()
             .initialize(manifest_path)
             .await?
             .initialize_lock()
             .await?;
 
-        let VitState::Locked(mut state) = state else {
-            bail!("Failed to initialize Vit state, expected locked state");
+        let VdmState::Locked(mut state) = state else {
+            bail!("Failed to initialize Vdm state, expected locked state");
         };
 
         let targets = state.manifest.targets()?;
@@ -51,10 +51,10 @@ impl VitVendor {
                     !offline,
                     "{key} is not available from the locked vendor directory in offline mode"
                 );
-                let target = VitSourceInput::parse_manifest_target(key, &entry.version)?;
+                let target = VdmSourceInput::parse_manifest_target(key, &entry.version)?;
                 let download =
-                    if let Some(target) = target.as_any().downcast_ref::<VitSourceGitHubTarget>() {
-                        VitGitHubCache::try_new()?
+                    if let Some(target) = target.as_any().downcast_ref::<VdmSourceGitHubTarget>() {
+                        VdmGitHubCache::try_new()?
                             .fetch_revision(target, &entry.revision)
                             .await?
                     } else {
@@ -73,7 +73,7 @@ impl VitVendor {
                 !offline,
                 "The locked dependency graph is incomplete in offline mode"
             );
-            let mut graph: BTreeMap<VitManifestTargetUrl, VitGraphFile> = BTreeMap::new();
+            let mut graph: BTreeMap<VdmManifestTargetUrl, VdmGraphFile> = BTreeMap::new();
             for (_, target) in targets {
                 for (key, file) in resolve_graph(target).await? {
                     if let Some(existing) = graph.get(&key) {
@@ -119,7 +119,7 @@ impl VitVendor {
         Ok(format!("sha256:{:x}", hasher.finalize()) == expected_hash)
     }
 
-    pub(super) fn lock_destination(paths: &VitPaths, value: &str) -> Result<PathBuf> {
+    pub(super) fn lock_destination(paths: &VdmPaths, value: &str) -> Result<PathBuf> {
         let relative = Path::new(value);
         ensure!(
             relative

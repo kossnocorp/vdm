@@ -11,13 +11,13 @@ use update::*;
 
 #[derive(Subcommands)]
 #[usage(run_async)]
-pub enum VitCliCmd {
+pub enum VdmCliCmd {
     /// Install dependencies
-    Install(VitCliCmdInstall),
+    Install(VdmCliCmdInstall),
 
     /// Add a dependency
-    Add(VitCliCmdAdd),
+    Add(VdmCliCmdAdd),
 
     /// Update a dependency
-    Update(VitCliCmdUpdate),
+    Update(VdmCliCmdUpdate),
 }

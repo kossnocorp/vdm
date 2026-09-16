@@ -1,11 +1,11 @@
 use crate::prelude::*;
 
-pub struct VitSourceFile {
+pub struct VdmSourceFile {
     pub revision: String,
     pub bytes: Vec<u8>,
 }
 
-impl VitFileWritable for VitSourceFile {
+impl VdmFileWritable for VdmSourceFile {
     fn bytes(&self) -> &[u8] {
         &self.bytes
     }

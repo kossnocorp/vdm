@@ -12,25 +12,25 @@ const MAX_CONCURRENT_FETCHES: usize = 4;
 static FETCH_PERMITS: Semaphore = Semaphore::const_new(MAX_CONCURRENT_FETCHES);
 
 #[derive(Clone)]
-pub struct VitGitHubCache {
+pub struct VdmGitHubCache {
     root: PathBuf,
 }
 
-impl VitGitHubCache {
+impl VdmGitHubCache {
     pub fn try_new() -> Result<Self> {
-        let dirs = ProjectDirs::from("org", "vendorit", "vit")
+        let dirs = ProjectDirs::from("fyi", "vdm", "vdm")
             .context("Failed to locate the local data directory")?;
         Ok(Self {
             root: dirs.data_local_dir().join("git/db/github.com"),
         })
     }
 
-    pub async fn fetch(&self, target: VitSourceGitHubTarget) -> Result<VitSourceFile> {
+    pub async fn fetch(&self, target: VdmSourceGitHubTarget) -> Result<VdmSourceFile> {
         let url = format!("https://github.com/{}/{}.git", target.owner, target.repo);
         self.fetch_url(target, url).await
     }
 
-    pub(crate) fn repository(&self, target: &VitSourceGitHubTarget) -> PathBuf {
+    pub(crate) fn repository(&self, target: &VdmSourceGitHubTarget) -> PathBuf {
         self.root
             .join(&target.owner)
             .join(format!("{}.git", target.repo))
@@ -38,13 +38,13 @@ impl VitGitHubCache {
 
     pub(crate) async fn fetch_revision(
         &self,
-        target: &VitSourceGitHubTarget,
+        target: &VdmSourceGitHubTarget,
         revision: &str,
-    ) -> Result<VitSourceFile> {
+    ) -> Result<VdmSourceFile> {
         self.fetch(target.with_version(revision)).await
     }
 
-    async fn fetch_url(&self, target: VitSourceGitHubTarget, url: String) -> Result<VitSourceFile> {
+    async fn fetch_url(&self, target: VdmSourceGitHubTarget, url: String) -> Result<VdmSourceFile> {
         let _permit = FETCH_PERMITS
             .acquire()
             .await
@@ -57,9 +57,9 @@ impl VitGitHubCache {
 
     fn fetch_url_blocking(
         &self,
-        target: &VitSourceGitHubTarget,
+        target: &VdmSourceGitHubTarget,
         url: &str,
-    ) -> Result<VitSourceFile> {
+    ) -> Result<VdmSourceFile> {
         let owner_dir = self.root.join(&target.owner);
         fs::create_dir_all(&owner_dir)
             .with_context(|| format!("Failed to create {}", owner_dir.display()))?;
@@ -93,7 +93,7 @@ impl VitGitHubCache {
             repo.find_commit(oid)?
         } else {
             let source = resolve_remote_ref(&repo, &target.version)?;
-            let refspec = format!("+{source}:refs/vit/fetch");
+            let refspec = format!("+{source}:refs/vdm/fetch");
             git(
                 &repo_path,
                 &[
@@ -107,15 +107,15 @@ impl VitGitHubCache {
             )
             .with_context(|| format!("Failed to fetch {} from {url}", target.version))?;
 
-            repo.revparse_single("refs/vit/fetch")?
+            repo.revparse_single("refs/vdm/fetch")?
                 .peel_to_commit()
                 .with_context(|| format!("{} does not resolve to a commit", target.version))?
         };
         repo.reference(
-            &format!("refs/vit/revisions/{}", commit.id()),
+            &format!("refs/vdm/revisions/{}", commit.id()),
             commit.id(),
             true,
-            "retain revision for vendorit cache",
+            "retain revision for vdm cache",
         )?;
         let entry = commit
             .tree()?
@@ -130,7 +130,7 @@ impl VitGitHubCache {
             .find_blob(blob_id)
             .with_context(|| format!("{} is not a file at commit {}", target.path, commit.id()))?;
 
-        Ok(VitSourceFile {
+        Ok(VdmSourceFile {
             revision: commit.id().to_string(),
             bytes: blob.content().to_vec(),
         })
@@ -170,7 +170,7 @@ fn git(repo: &Path, args: &[&str]) -> Result<()> {
     Ok(())
 }
 
-fn resolve_remote_ref(repo: &Repository, version: &VitManifestSourceVersion) -> Result<String> {
+fn resolve_remote_ref(repo: &Repository, version: &VdmManifestSourceVersion) -> Result<String> {
     if version.as_str().len() == 40 && Oid::from_str(version.as_str()).is_ok() {
         return Ok(version.as_str().to_owned());
     }
@@ -219,7 +219,7 @@ mod tests {
         index.add_path(Path::new("file.txt")).unwrap();
         let tree_id = index.write_tree().unwrap();
         let tree = source.find_tree(tree_id).unwrap();
-        let signature = Signature::now("Vit Test", "vit@example.com").unwrap();
+        let signature = Signature::now("Vdm Test", "vdm@example.com").unwrap();
         source
             .commit(
                 Some("refs/heads/main"),
@@ -231,16 +231,16 @@ mod tests {
             )
             .unwrap();
 
-        let cache = VitGitHubCache {
+        let cache = VdmGitHubCache {
             root: temp.path().join("cache"),
         };
-        let parsed = VIT_SOURCE_GITHUB
+        let parsed = VDM_SOURCE_GITHUB
             .parse("gh:owner/repo/file.txt@main")
             .unwrap()
             .unwrap();
         let target = parsed
             .as_any()
-            .downcast_ref::<VitSourceGitHubTarget>()
+            .downcast_ref::<VdmSourceGitHubTarget>()
             .unwrap();
         let download = cache
             .fetch_url(target.clone(), format!("file://{}", source_path.display()))

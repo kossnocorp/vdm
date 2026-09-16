@@ -39,7 +39,7 @@ jobs:
         run: rustup target add ${{ matrix.target }}
 
       - name: Build Binary
-        run: cargo build --locked --release --package vendorit --bin vit --target ${{ matrix.target }}
+        run: cargo build --locked --release --package vdm_cli --bin vdm --target ${{ matrix.target }}
 
       - name: Derive Binary Extension
         id: binary_extension
@@ -54,8 +54,8 @@ jobs:
       - name: Upload Binary
         uses: actions/upload-artifact@v6
         with:
-          name: vit-${{ inputs.artifact_suffix || github.sha }}-${{ matrix.target }}${{ steps.binary_extension.outputs.value }}
-          path: target/${{ matrix.target }}/release/vit${{ steps.binary_extension.outputs.value }}
+          name: vdm-${{ inputs.artifact_suffix || github.sha }}-${{ matrix.target }}${{ steps.binary_extension.outputs.value }}
+          path: target/${{ matrix.target }}/release/vdm${{ steps.binary_extension.outputs.value }}
           if-no-files-found: error
 
       - name: Display Stats

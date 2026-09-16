@@ -2,7 +2,7 @@
 
 set -eu
 
-repo="kossnocorp/vit"
+repo="kossnocorp/vdm"
 
 case "$(uname -s):$(uname -m)" in
   Darwin:x86_64) target="x86_64-apple-darwin" ;;
@@ -20,14 +20,14 @@ tag="${latest_url##*/}"
 case "$tag" in
   v[0-9]*) ;;
   *)
-    printf 'Could not determine the latest Vit release.\n' >&2
+    printf 'Could not determine the latest Vdm release.\n' >&2
     exit 1
     ;;
 esac
 
-install_dir="${VIT_INSTALL_DIR:-${XDG_BIN_HOME:-$HOME/.local/bin}}"
-asset="vit-$tag-$target"
-temp_file="$(mktemp "${TMPDIR:-/tmp}/vit.XXXXXX")"
+install_dir="${VDM_INSTALL_DIR:-${XDG_BIN_HOME:-$HOME/.local/bin}}"
+asset="vdm-$tag-$target"
+temp_file="$(mktemp "${TMPDIR:-/tmp}/vdm.XXXXXX")"
 trap 'rm -f "$temp_file"' EXIT HUP INT TERM
 
 curl -fL --progress-bar \
@@ -35,11 +35,11 @@ curl -fL --progress-bar \
   -o "$temp_file"
 chmod +x "$temp_file"
 mkdir -p "$install_dir"
-mv "$temp_file" "$install_dir/vit"
+mv "$temp_file" "$install_dir/vdm"
 trap - EXIT HUP INT TERM
 
-printf 'Installed Vit to %s/vit\n' "$install_dir"
+printf 'Installed Vdm to %s/vdm\n' "$install_dir"
 case ":$PATH:" in
   *":$install_dir:"*) ;;
-  *) printf 'Add %s to PATH to run vit.\n' "$install_dir" ;;
+  *) printf 'Add %s to PATH to run vdm.\n' "$install_dir" ;;
 esac

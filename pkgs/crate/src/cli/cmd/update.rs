@@ -1,9 +1,9 @@
 use crate::cli::prelude::*;
 
 #[derive(Args)]
-pub struct VitCliCmdUpdate {
+pub struct VdmCliCmdUpdate {
     #[usage(flatten)]
-    manifest_args: VitCliArgsManifest,
+    manifest_args: VdmCliArgsManifest,
 
     #[usage(value_name = "FILE")]
     file: String,
@@ -13,11 +13,11 @@ pub struct VitCliCmdUpdate {
     review: bool,
 }
 
-impl RunAsync for VitCliCmdUpdate {
+impl RunAsync for VdmCliCmdUpdate {
     type Output = Result<()>;
 
     async fn run_async(self) -> Self::Output {
-        VitVendor::update(
+        VdmVendor::update(
             self.manifest_args.manifest.as_deref(),
             &self.file,
             self.review,

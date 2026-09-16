@@ -1,42 +1,42 @@
 use crate::prelude::*;
 
-pub struct VitStateInitializing {
-    pub dirs: VitDirs,
+pub struct VdmStateInitializing {
+    pub dirs: VdmDirs,
 }
 
-impl VitStateInitializing {
-    pub fn create_state() -> VitState {
-        match VitDirs::resolve() {
-            Ok(dirs) => VitStateInitializing { dirs }.into(),
+impl VdmStateInitializing {
+    pub fn create_state() -> VdmState {
+        match VdmDirs::resolve() {
+            Ok(dirs) => VdmStateInitializing { dirs }.into(),
 
-            Err(error) => VitStateErrored::create_error(error),
+            Err(error) => VdmStateErrored::create_error(error),
         }
     }
 
-    pub async fn as_initialized_state(self, path: Option<&Path>) -> Result<VitState> {
-        match VitPaths::resolve(path).await {
-            Ok(paths) => match VitManifest::read_toml(&paths.manifest).await {
-                Ok(manifest) => Ok(VitStateInitialized {
+    pub async fn as_initialized_state(self, path: Option<&Path>) -> Result<VdmState> {
+        match VdmPaths::resolve(path).await {
+            Ok(paths) => match VdmManifest::read_toml(&paths.manifest).await {
+                Ok(manifest) => Ok(VdmStateInitialized {
                     dirs: self.dirs,
                     paths,
                     manifest,
                 }
                 .into()),
 
-                Err(err) => Ok(VitStateErrored::initialize_error(
+                Err(err) => Ok(VdmStateErrored::initialize_error(
                     self.dirs,
                     Some(paths),
                     err,
                 )),
             },
 
-            Err(err) => Ok(VitStateErrored::initialize_error(self.dirs, None, err)),
+            Err(err) => Ok(VdmStateErrored::initialize_error(self.dirs, None, err)),
         }
     }
 }
 
-impl From<VitStateInitializing> for VitState {
-    fn from(state: VitStateInitializing) -> VitState {
-        VitState::Initializing(state)
+impl From<VdmStateInitializing> for VdmState {
+    fn from(state: VdmStateInitializing) -> VdmState {
+        VdmState::Initializing(state)
     }
 }

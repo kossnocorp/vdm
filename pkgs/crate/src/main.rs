@@ -39,7 +39,7 @@ pub use vendor::*;
 
 #[tokio::main]
 async fn main() {
-    VitCli::parse().run_async().await.unwrap_or_else(|err| {
+    VdmCli::parse().run_async().await.unwrap_or_else(|err| {
         println!("Error: {:?}", err);
         std::process::exit(1);
     });

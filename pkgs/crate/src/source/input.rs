@@ -1,10 +1,10 @@
 use crate::prelude::*;
 
-pub struct VitSourceInput;
+pub struct VdmSourceInput;
 
-impl VitSourceInput {
-    pub fn parse_target(input: &str) -> Result<Box<dyn VitTarget>> {
-        let sources: [&'static dyn VitSource; 2] = [&VIT_SOURCE_GITHUB, &VIT_SOURCE_HTTP];
+impl VdmSourceInput {
+    pub fn parse_target(input: &str) -> Result<Box<dyn VdmTarget>> {
+        let sources: [&'static dyn VdmSource; 2] = [&VDM_SOURCE_GITHUB, &VDM_SOURCE_HTTP];
         for source in sources {
             if let Some(target) = source.parse(input)? {
                 return Ok(target);
@@ -15,9 +15,9 @@ impl VitSourceInput {
     }
 
     pub fn parse_manifest_target(
-        key: &VitManifestTargetUrl,
-        version: &VitManifestSourceVersion,
-    ) -> Result<Box<dyn VitTarget>> {
+        key: &VdmManifestTargetUrl,
+        version: &VdmManifestSourceVersion,
+    ) -> Result<Box<dyn VdmTarget>> {
         let input = if key.as_str().starts_with("gh:") {
             format!("{key}@{version}")
         } else {
@@ -40,36 +40,36 @@ mod tests {
     #[test]
     fn parses_sources_in_order() {
         assert!(
-            VitSourceInput::parse_target("gh:js-fns/js-fns/vitest.config.ts@main")
+            VdmSourceInput::parse_target("gh:js-fns/js-fns/vitest.config.ts@main")
                 .unwrap()
                 .as_any()
-                .is::<VitSourceGitHubTarget>()
+                .is::<VdmSourceGitHubTarget>()
         );
         assert!(
-            VitSourceInput::parse_target("https://example.com/assets/file.js")
+            VdmSourceInput::parse_target("https://example.com/assets/file.js")
                 .unwrap()
                 .as_any()
-                .is::<VitSourceHttpTarget>()
+                .is::<VdmSourceHttpTarget>()
         );
-        assert!(VitSourceInput::parse_target("js-fns/js-fns/file.js@main").is_err());
+        assert!(VdmSourceInput::parse_target("js-fns/js-fns/file.js@main").is_err());
     }
 
     #[test]
     fn restores_targets_from_manifest_entries() {
-        let github = VitSourceInput::parse_manifest_target(
-            &VitManifestTargetUrl::new("gh:js-fns/js-fns/vitest.config.ts"),
-            &VitManifestSourceVersion::new("main"),
+        let github = VdmSourceInput::parse_manifest_target(
+            &VdmManifestTargetUrl::new("gh:js-fns/js-fns/vitest.config.ts"),
+            &VdmManifestSourceVersion::new("main"),
         )
         .unwrap();
-        assert_eq!(github.version(), &VitManifestSourceVersion::new("main"));
+        assert_eq!(github.version(), &VdmManifestSourceVersion::new("main"));
 
         let url = "https://example.com/assets/file.js";
-        let key = VitManifestTargetUrl::new(url);
-        let http = VitSourceInput::parse_manifest_target(&key, &VitManifestSourceVersion::new(url))
+        let key = VdmManifestTargetUrl::new(url);
+        let http = VdmSourceInput::parse_manifest_target(&key, &VdmManifestSourceVersion::new(url))
             .unwrap();
         assert_eq!(http.key(), &key);
         assert!(
-            VitSourceInput::parse_manifest_target(&key, &VitManifestSourceVersion::new("other"))
+            VdmSourceInput::parse_manifest_target(&key, &VdmManifestSourceVersion::new("other"))
                 .is_err()
         );
     }

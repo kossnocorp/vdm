@@ -8,19 +8,19 @@ use std::io;
 use std::process::Command;
 use std::sync::{Arc, Mutex};
 
-pub struct VitGraphFile {
-    pub target: Box<dyn VitTarget>,
-    pub download: VitSourceFile,
-    pub dependencies: Vec<VitManifestTargetUrl>,
+pub struct VdmGraphFile {
+    pub target: Box<dyn VdmTarget>,
+    pub download: VdmSourceFile,
+    pub dependencies: Vec<VdmManifestTargetUrl>,
 }
 
 pub async fn resolve_graph(
-    target: Box<dyn VitTarget>,
-) -> Result<BTreeMap<VitManifestTargetUrl, VitGraphFile>> {
-    if let Some(target) = target.as_any().downcast_ref::<VitSourceGitHubTarget>() {
+    target: Box<dyn VdmTarget>,
+) -> Result<BTreeMap<VdmManifestTargetUrl, VdmGraphFile>> {
+    if let Some(target) = target.as_any().downcast_ref::<VdmSourceGitHubTarget>() {
         return resolve_github_graph(target.clone()).await;
     }
-    if let Some(target) = target.as_any().downcast_ref::<VitSourceHttpTarget>() {
+    if let Some(target) = target.as_any().downcast_ref::<VdmSourceHttpTarget>() {
         return resolve_http_graph(target.clone()).await;
     }
 
@@ -28,7 +28,7 @@ pub async fn resolve_graph(
     let key = target.key().clone();
     Ok(BTreeMap::from([(
         key,
-        VitGraphFile {
+        VdmGraphFile {
             target,
             download,
             dependencies: Vec::new(),
@@ -37,8 +37,8 @@ pub async fn resolve_graph(
 }
 
 async fn resolve_http_graph(
-    root: VitSourceHttpTarget,
-) -> Result<BTreeMap<VitManifestTargetUrl, VitGraphFile>> {
+    root: VdmSourceHttpTarget,
+) -> Result<BTreeMap<VdmManifestTargetUrl, VdmGraphFile>> {
     let mut pending = vec![(root, None)];
     let mut files = BTreeMap::new();
     let mut rust_resolver = None;
@@ -71,10 +71,10 @@ async fn resolve_http_graph(
                 let Some(url) = url else {
                     continue;
                 };
-                let dependency = VitSourceInput::parse_target(url.as_str())?;
+                let dependency = VdmSourceInput::parse_target(url.as_str())?;
                 let dependency = dependency
                     .as_any()
-                    .downcast_ref::<VitSourceHttpTarget>()
+                    .downcast_ref::<VdmSourceHttpTarget>()
                     .context("Resolved HTTP dependency has a different source")?
                     .clone();
                 dependencies.push(dependency.key().clone());
@@ -101,7 +101,7 @@ async fn resolve_http_graph(
                 let resolver = match current {
                     Some(resolver) => resolver,
                     None => RustResolver::new(
-                        HttpFileSystem::new_for(origin, PathBuf::from("/vit"))?,
+                        HttpFileSystem::new_for(origin, PathBuf::from("/vdm"))?,
                         &requested,
                     )?,
                 };
@@ -113,10 +113,10 @@ async fn resolve_http_graph(
             rust_resolver = Some(next);
             for path in resolved {
                 let url = http_origin(&final_url).join(&path.to_string_lossy())?;
-                let dependency = VitSourceInput::parse_target(url.as_str())?;
+                let dependency = VdmSourceInput::parse_target(url.as_str())?;
                 let dependency = dependency
                     .as_any()
-                    .downcast_ref::<VitSourceHttpTarget>()
+                    .downcast_ref::<VdmSourceHttpTarget>()
                     .context("Resolved HTTP dependency has a different source")?
                     .clone();
                 dependencies.push(dependency.key().clone());
@@ -129,7 +129,7 @@ async fn resolve_http_graph(
         }
         files.insert(
             target.key().clone(),
-            VitGraphFile {
+            VdmGraphFile {
                 target: Box::new(target),
                 download,
                 dependencies,
@@ -140,9 +140,9 @@ async fn resolve_http_graph(
 }
 
 async fn resolve_github_graph(
-    root: VitSourceGitHubTarget,
-) -> Result<BTreeMap<VitManifestTargetUrl, VitGraphFile>> {
-    let cache = VitGitHubCache::try_new()?;
+    root: VdmSourceGitHubTarget,
+) -> Result<BTreeMap<VdmManifestTargetUrl, VdmGraphFile>> {
+    let cache = VdmGitHubCache::try_new()?;
     let root_download = cache.fetch(root.clone()).await?;
     let revision = root_download.revision.clone();
     let repository = cache.repository(&root);
@@ -150,7 +150,7 @@ async fn resolve_github_graph(
     let rust_file_system = GitFileSystem {
         repository: cache.repository(&root),
         revision: revision.clone(),
-        root: PathBuf::from("/vit"),
+        root: PathBuf::from("/vdm"),
     };
     let mut rust_resolver = None;
     let mut pending = vec![(root, Some(root_download))];
@@ -219,7 +219,7 @@ async fn resolve_github_graph(
 
         files.insert(
             target.key().clone(),
-            VitGraphFile {
+            VdmGraphFile {
                 target: Box::new(target),
                 download,
                 dependencies,
@@ -256,7 +256,7 @@ struct GitResolver {
 
 impl GitResolver {
     fn new(repository: PathBuf, revision: String) -> Self {
-        let root = PathBuf::from("/vit");
+        let root = PathBuf::from("/vdm");
         let alias = |extensions: &[&str]| extensions.iter().map(ToString::to_string).collect();
         let options = ResolveOptions {
             cwd: Some(root.clone()),
@@ -485,7 +485,7 @@ impl HttpResolver {
         origin.set_path("/");
         origin.set_query(None);
         origin.set_fragment(None);
-        let root = PathBuf::from("/vit");
+        let root = PathBuf::from("/vdm");
         let alias = |extensions: &[&str]| extensions.iter().map(ToString::to_string).collect();
         let options = ResolveOptions {
             cwd: Some(root.clone()),
@@ -577,7 +577,7 @@ struct HttpFileSystem {
 impl HttpFileSystem {
     fn new_for(origin: reqwest::Url, root: PathBuf) -> Result<Self> {
         let client = reqwest::blocking::Client::builder()
-            .user_agent("vendorit/0.1")
+            .user_agent("vdm/0.1")
             .build()
             .context("Failed to create HTTP resolver client")?;
         Ok(Self {
@@ -732,7 +732,7 @@ mod tests {
             }
         });
 
-        let target = VitSourceInput::parse_target(&format!("http://{address}/root.ts")).unwrap();
+        let target = VdmSourceInput::parse_target(&format!("http://{address}/root.ts")).unwrap();
         let graph = resolve_graph(target).await.unwrap();
         server.abort();
 
@@ -784,7 +784,7 @@ mod tests {
         });
 
         let target =
-            VitSourceInput::parse_target(&format!("http://{address}/pkg/src/root.rs")).unwrap();
+            VdmSourceInput::parse_target(&format!("http://{address}/pkg/src/root.rs")).unwrap();
         let graph = resolve_graph(target).await.unwrap();
         server.abort();
 

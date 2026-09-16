@@ -4,27 +4,27 @@ mod file;
 pub use file::*;
 
 #[derive(Debug, Deserialize, Serialize, Default, Clone)]
-pub struct VitLock {
+pub struct VdmLock {
     #[serde(default)]
-    pub files: BTreeMap<VitManifestTargetUrl, VitLockFile>,
+    pub files: BTreeMap<VdmManifestTargetUrl, VdmLockFile>,
     #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
-    pub updates: BTreeMap<VitManifestTargetUrl, VitLockUpdate>,
+    pub updates: BTreeMap<VdmManifestTargetUrl, VdmLockUpdate>,
 }
 
 #[derive(Debug, Deserialize, Serialize, Clone, PartialEq)]
-pub struct VitLockUpdate {
+pub struct VdmLockUpdate {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub from: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub to: Option<String>,
-    pub decision: VitLockUpdateDecision,
+    pub decision: VdmLockUpdateDecision,
 }
 
 #[derive(Debug, Deserialize, Serialize, Clone, Copy, PartialEq)]
 #[serde(rename_all = "lowercase")]
-pub enum VitLockUpdateDecision {
+pub enum VdmLockUpdateDecision {
     Accepted,
     Rejected,
 }
 
-impl VitFileToml for VitLock {}
+impl VdmFileToml for VdmLock {}

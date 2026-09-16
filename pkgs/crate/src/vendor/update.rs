@@ -4,14 +4,14 @@ use similar::{ChangeTag, TextDiff};
 use std::io;
 
 pub(super) enum ReviewKind {
-    Upsert(VitGraphFile, Box<VitLockFile>),
+    Upsert(VdmGraphFile, Box<VdmLockFile>),
     Delete,
 }
 
 pub(super) struct ReviewFile {
-    pub key: VitManifestTargetUrl,
+    pub key: VdmManifestTargetUrl,
     pub path: String,
-    pub old: Option<VitLockFile>,
+    pub old: Option<VdmLockFile>,
     pub kind: ReviewKind,
     pub additions: usize,
     pub deletions: usize,
@@ -21,13 +21,13 @@ pub(super) struct ReviewFile {
     pub accepted: bool,
 }
 
-impl VitVendor {
+impl VdmVendor {
     pub async fn update(manifest_path: Option<&Path>, input: &str, review: bool) -> Result<()> {
-        let target = VitSourceInput::parse_target(input)?;
-        let state = VitState::create().initialize(manifest_path).await?;
+        let target = VdmSourceInput::parse_target(input)?;
+        let state = VdmState::create().initialize(manifest_path).await?;
 
-        let VitState::Initialized(state) = state else {
-            bail!("Failed to initialize Vit state, expected initialized state");
+        let VdmState::Initialized(state) = state else {
+            bail!("Failed to initialize Vdm state, expected initialized state");
         };
 
         let targets = state.manifest.targets()?;
@@ -63,7 +63,7 @@ impl VitVendor {
         let mut files = Vec::new();
         for (file_key, file) in graph {
             let destination = state.paths.target(file.target.as_ref());
-            let next = VitLockFile::new(
+            let next = VdmLockFile::new(
                 file.target.as_ref(),
                 &file.download,
                 &state.paths,
@@ -163,13 +163,13 @@ impl VitVendor {
             };
             state.lock.updates.insert(
                 file.key.clone(),
-                VitLockUpdate {
+                VdmLockUpdate {
                     from,
                     to,
                     decision: if file.accepted {
-                        VitLockUpdateDecision::Accepted
+                        VdmLockUpdateDecision::Accepted
                     } else {
-                        VitLockUpdateDecision::Rejected
+                        VdmLockUpdateDecision::Rejected
                     },
                 },
             );

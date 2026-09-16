@@ -1,0 +1,10 @@
+{
+  "name": "@vdm.fyi/crate",
+  "private": true,
+  "type": "module",
+  "devDependencies": {
+    "@types/node": "^24.13.3",
+    "vitest": "^4.1.11",
+    "zx": "^8.8.5"
+  }
+}

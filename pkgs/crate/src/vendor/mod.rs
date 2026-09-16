@@ -8,18 +8,18 @@ mod update;
 
 mod review;
 
-pub struct VitVendor;
+pub struct VdmVendor;
 
-impl VitVendor {
+impl VdmVendor {
     async fn write_graph(
-        state: &mut VitStateLocked,
-        graph: BTreeMap<VitManifestTargetUrl, VitGraphFile>,
-        direct: &BTreeSet<VitManifestTargetUrl>,
+        state: &mut VdmStateLocked,
+        graph: BTreeMap<VdmManifestTargetUrl, VdmGraphFile>,
+        direct: &BTreeSet<VdmManifestTargetUrl>,
     ) -> Result<usize> {
         let mut written = 0;
         for (key, file) in graph {
             let destination = state.paths.target(file.target.as_ref());
-            let next = VitLockFile::new(
+            let next = VdmLockFile::new(
                 file.target.as_ref(),
                 &file.download,
                 &state.paths,
@@ -38,9 +38,9 @@ impl VitVendor {
     }
 
     fn reachable(
-        lock: &VitLock,
-        roots: impl IntoIterator<Item = VitManifestTargetUrl>,
-    ) -> BTreeSet<VitManifestTargetUrl> {
+        lock: &VdmLock,
+        roots: impl IntoIterator<Item = VdmManifestTargetUrl>,
+    ) -> BTreeSet<VdmManifestTargetUrl> {
         let mut reachable = BTreeSet::new();
         let mut pending = roots.into_iter().collect::<Vec<_>>();
         while let Some(key) = pending.pop() {
@@ -55,8 +55,8 @@ impl VitVendor {
     }
 
     async fn prune_unreachable(
-        state: &mut VitStateLocked,
-        roots: impl IntoIterator<Item = VitManifestTargetUrl>,
+        state: &mut VdmStateLocked,
+        roots: impl IntoIterator<Item = VdmManifestTargetUrl>,
     ) -> Result<usize> {
         let reachable = Self::reachable(&state.lock, roots);
         let stale = state
@@ -86,8 +86,8 @@ mod tests {
     #[tokio::test]
     async fn install_removes_files_missing_from_manifest_and_updates_lock() {
         let directory = tempfile::tempdir().unwrap();
-        let paths = VitPaths::resolve(Some(directory.path())).await.unwrap();
-        VitManifest::new()
+        let paths = VdmPaths::resolve(Some(directory.path())).await.unwrap();
+        VdmManifest::new()
             .write_toml(&paths.manifest)
             .await
             .unwrap();
@@ -98,12 +98,12 @@ mod tests {
         let unrelated_path = directory.path().join("vendor/unrelated.txt");
         fs::write(&unrelated_path, "keep").unwrap();
 
-        let mut lock = VitLock::default();
+        let mut lock = VdmLock::default();
         lock.files.insert(
-            VitManifestTargetUrl::new("gh:owner/repo/stale.txt"),
-            VitLockFile {
+            VdmManifestTargetUrl::new("gh:owner/repo/stale.txt"),
+            VdmLockFile {
                 direct: true,
-                version: VitManifestSourceVersion::new("main"),
+                version: VdmManifestSourceVersion::new("main"),
                 revision: "revision".to_owned(),
                 hash: "sha256:stale".to_owned(),
                 source: "https://example.com/stale.txt".to_owned(),
@@ -113,7 +113,7 @@ mod tests {
         );
         lock.write_toml(&paths.lock).await.unwrap();
 
-        VitVendor::install(Some(directory.path()), false)
+        VdmVendor::install(Some(directory.path()), false)
             .await
             .unwrap();
 
@@ -121,7 +121,7 @@ mod tests {
         assert!(!directory.path().join("vendor/@owner").exists());
         assert_eq!(fs::read_to_string(unrelated_path).unwrap(), "keep");
         assert!(
-            VitLock::read_toml(&paths.lock)
+            VdmLock::read_toml(&paths.lock)
                 .await
                 .unwrap()
                 .files
@@ -132,15 +132,15 @@ mod tests {
     #[tokio::test]
     async fn resolves_manifest_and_target_paths() {
         let directory = tempfile::tempdir().unwrap();
-        let paths = VitPaths::resolve(Some(directory.path())).await.unwrap();
-        let target = VitSourceInput::parse_target("gh:js-fns/js-fns/src/file.ts@main").unwrap();
+        let paths = VdmPaths::resolve(Some(directory.path())).await.unwrap();
+        let target = VdmSourceInput::parse_target("gh:js-fns/js-fns/src/file.ts@main").unwrap();
         assert_eq!(paths.manifest, directory.path().join("vendor.toml"));
         assert_eq!(
             paths.target(target.as_ref()),
             directory.path().join("vendor/@js-fns/js-fns/src/file.ts")
         );
         assert!(
-            VitPaths::resolve(Some(Path::new("other.toml")))
+            VdmPaths::resolve(Some(Path::new("other.toml")))
                 .await
                 .is_err()
         );

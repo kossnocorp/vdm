@@ -8,35 +8,35 @@ pub use target::*;
 
 #[derive(Debug, Deserialize, Serialize, Default)]
 #[serde(deny_unknown_fields)]
-pub struct VitManifest {
+pub struct VdmManifest {
     #[serde(default)]
-    sources: BTreeMap<VitManifestTargetUrl, VitManifestSource>,
+    sources: BTreeMap<VdmManifestTargetUrl, VdmManifestSource>,
 }
 
-impl VitManifest {
+impl VdmManifest {
     pub fn new() -> Self {
         Self::default()
     }
 
-    pub fn add(&mut self, url: &VitManifestTargetUrl, version: &VitManifestSourceVersion) {
+    pub fn add(&mut self, url: &VdmManifestTargetUrl, version: &VdmManifestSourceVersion) {
         self.sources.insert(
             url.clone(),
-            VitManifestSource::File(VitManifestSourceFile::Version(version.clone())),
+            VdmManifestSource::File(VdmManifestSourceFile::Version(version.clone())),
         );
     }
 
     pub fn update(
         &mut self,
-        url: &VitManifestTargetUrl,
-        version: &VitManifestSourceVersion,
+        url: &VdmManifestTargetUrl,
+        version: &VdmManifestSourceVersion,
     ) -> Result<()> {
         for (base, source) in &mut self.sources {
             match source {
-                VitManifestSource::File(file) if base == url => {
+                VdmManifestSource::File(file) if base == url => {
                     file.set_version(version);
                     return Ok(());
                 }
-                VitManifestSource::Files(files) => {
+                VdmManifestSource::Files(files) => {
                     if files.set_version(base, url, version)? {
                         return Ok(());
                     }
@@ -47,23 +47,23 @@ impl VitManifest {
         bail!("{url} is not present in the manifest")
     }
 
-    pub fn iter_targets(&self) -> impl Iterator<Item = Result<Box<dyn VitTarget>>> + '_ {
+    pub fn iter_targets(&self) -> impl Iterator<Item = Result<Box<dyn VdmTarget>>> + '_ {
         self.sources.iter().flat_map(|(url, source)| match source {
-            VitManifestSource::File(file) => {
-                vec![VitSourceInput::parse_manifest_target(url, file.version())]
+            VdmManifestSource::File(file) => {
+                vec![VdmSourceInput::parse_manifest_target(url, file.version())]
             }
 
-            VitManifestSource::Files(source) => source
+            VdmManifestSource::Files(source) => source
                 .iter_versions()
                 .map(|(path, version)| {
                     let url = url.join(path)?;
-                    VitSourceInput::parse_manifest_target(&url, version)
+                    VdmSourceInput::parse_manifest_target(&url, version)
                 })
                 .collect(),
         })
     }
 
-    pub fn targets(&self) -> Result<BTreeMap<VitManifestTargetUrl, Box<dyn VitTarget>>> {
+    pub fn targets(&self) -> Result<BTreeMap<VdmManifestTargetUrl, Box<dyn VdmTarget>>> {
         let mut targets = BTreeMap::new();
         for target in self.iter_targets() {
             let target = target?;
@@ -78,7 +78,7 @@ impl VitManifest {
     }
 }
 
-impl VitFileToml for VitManifest {}
+impl VdmFileToml for VdmManifest {}
 
 #[cfg(test)]
 mod tests {
@@ -86,7 +86,7 @@ mod tests {
 
     #[test]
     fn resolves_all_manifest_source_forms() {
-        let manifest: VitManifest = toml::from_str(
+        let manifest: VdmManifest = toml::from_str(
             r#"
 [sources]
 "gh:kossnocorp/dev/README.md" = "main"
@@ -105,33 +105,33 @@ files = [
         assert!(matches!(
             manifest
                 .sources
-                .get(&VitManifestTargetUrl::new("gh:kossnocorp/dev")),
-            Some(VitManifestSource::Files(_))
+                .get(&VdmManifestTargetUrl::new("gh:kossnocorp/dev")),
+            Some(VdmManifestSource::Files(_))
         ));
 
         let targets = manifest.targets().unwrap();
         assert_eq!(targets.len(), 4);
         assert_eq!(
-            targets[&VitManifestTargetUrl::new("gh:kossnocorp/dev/README.md")].version(),
-            &VitManifestSourceVersion::new("main")
+            targets[&VdmManifestTargetUrl::new("gh:kossnocorp/dev/README.md")].version(),
+            &VdmManifestSourceVersion::new("main")
         );
         assert_eq!(
-            targets[&VitManifestTargetUrl::new("gh:kossnocorp/dev/LICENSE")].version(),
-            &VitManifestSourceVersion::new("v1")
+            targets[&VdmManifestTargetUrl::new("gh:kossnocorp/dev/LICENSE")].version(),
+            &VdmManifestSourceVersion::new("v1")
         );
         assert_eq!(
-            targets[&VitManifestTargetUrl::new("gh:kossnocorp/dev/mise.toml")].version(),
-            &VitManifestSourceVersion::new("v2")
+            targets[&VdmManifestTargetUrl::new("gh:kossnocorp/dev/mise.toml")].version(),
+            &VdmManifestSourceVersion::new("v2")
         );
         assert_eq!(
-            targets[&VitManifestTargetUrl::new("gh:kossnocorp/dev/package.json")].version(),
-            &VitManifestSourceVersion::new("v3")
+            targets[&VdmManifestTargetUrl::new("gh:kossnocorp/dev/package.json")].version(),
+            &VdmManifestSourceVersion::new("v3")
         );
     }
 
     #[test]
     fn rejects_duplicate_expanded_targets() {
-        let manifest: VitManifest = toml::from_str(
+        let manifest: VdmManifest = toml::from_str(
             r#"
 [sources]
 "gh:kossnocorp/dev/mise.toml" = "main"
@@ -155,7 +155,7 @@ files = ["mise.toml"]
 
     #[test]
     fn rejects_unsafe_grouped_paths() {
-        let manifest: VitManifest = toml::from_str(
+        let manifest: VdmManifest = toml::from_str(
             r#"
 [sources."gh:kossnocorp/dev"]
 version = "main"
@@ -177,7 +177,7 @@ files = ["../secret"]
     #[test]
     fn rejects_the_old_files_manifest() {
         assert!(
-            toml::from_str::<VitManifest>(
+            toml::from_str::<VdmManifest>(
                 r#"
 [files]
 "gh:kossnocorp/dev/mise.toml" = "main"
@@ -189,10 +189,10 @@ files = ["../secret"]
 
     #[test]
     fn add_serializes_a_direct_scalar_source() {
-        let mut manifest = VitManifest::new();
+        let mut manifest = VdmManifest::new();
         manifest.add(
-            &VitManifestTargetUrl::new("gh:kossnocorp/dev/mise.toml"),
-            &VitManifestSourceVersion::new("main"),
+            &VdmManifestTargetUrl::new("gh:kossnocorp/dev/mise.toml"),
+            &VdmManifestSourceVersion::new("main"),
         );
 
         let source = toml::to_string_pretty(&manifest).unwrap();
@@ -204,7 +204,7 @@ files = ["../secret"]
 
     #[test]
     fn updates_direct_and_grouped_target_versions() {
-        let mut manifest: VitManifest = toml::from_str(
+        let mut manifest: VdmManifest = toml::from_str(
             r#"
 [sources]
 "gh:kossnocorp/dev/README.md" = "old"
@@ -215,22 +215,22 @@ files = ["mise.toml", { path = "package.json", version = "older" }]
 "#,
         )
         .unwrap();
-        let version = VitManifestSourceVersion::new("main");
+        let version = VdmManifestSourceVersion::new("main");
         manifest
             .update(
-                &VitManifestTargetUrl::new("gh:kossnocorp/dev/README.md"),
+                &VdmManifestTargetUrl::new("gh:kossnocorp/dev/README.md"),
                 &version,
             )
             .unwrap();
         manifest
             .update(
-                &VitManifestTargetUrl::new("gh:kossnocorp/dev/mise.toml"),
+                &VdmManifestTargetUrl::new("gh:kossnocorp/dev/mise.toml"),
                 &version,
             )
             .unwrap();
         manifest
             .update(
-                &VitManifestTargetUrl::new("gh:kossnocorp/dev/package.json"),
+                &VdmManifestTargetUrl::new("gh:kossnocorp/dev/package.json"),
                 &version,
             )
             .unwrap();

@@ -1,0 +1,7 @@
+{
+  "include": ["tests/**/*.ts"],
+  "compilerOptions": {
+    "types": ["node"],
+    "strict": true
+  }
+}

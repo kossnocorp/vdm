@@ -1,4 +1,4 @@
 {
   "include": [],
-  "references": [{ "path": "./pkgs/website" }]
+  "references": [{ "path": "./pkgs/crate" }, { "path": "./pkgs/website" }]
 }

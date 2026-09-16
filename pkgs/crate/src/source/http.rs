@@ -2,21 +2,21 @@ use crate::prelude::*;
 
 use reqwest::{Client, Url};
 
-pub static VIT_SOURCE_HTTP: VitSourceHttp = VitSourceHttp;
+pub static VDM_SOURCE_HTTP: VdmSourceHttp = VdmSourceHttp;
 
-pub struct VitSourceHttp;
+pub struct VdmSourceHttp;
 
 #[derive(Clone, Debug, PartialEq)]
-pub struct VitSourceHttpTarget {
+pub struct VdmSourceHttpTarget {
     url: Url,
-    key: VitManifestTargetUrl,
-    version: VitManifestSourceVersion,
+    key: VdmManifestTargetUrl,
+    version: VdmManifestSourceVersion,
     vendor_path: PathBuf,
 }
 
 #[async_trait]
-impl VitSource for VitSourceHttp {
-    fn parse(&self, input: &str) -> Result<Option<Box<dyn VitTarget>>> {
+impl VdmSource for VdmSourceHttp {
+    fn parse(&self, input: &str) -> Result<Option<Box<dyn VdmTarget>>> {
         if !input.starts_with("http://") && !input.starts_with("https://") {
             return Ok(None);
         }
@@ -41,21 +41,21 @@ impl VitSource for VitSourceHttp {
         };
 
         let key = url.to_string();
-        Ok(Some(Box::new(VitSourceHttpTarget {
-            key: VitManifestTargetUrl::new(&key),
-            version: VitManifestSourceVersion::new(&key),
+        Ok(Some(Box::new(VdmSourceHttpTarget {
+            key: VdmManifestTargetUrl::new(&key),
+            version: VdmManifestSourceVersion::new(&key),
             vendor_path: PathBuf::from("@http").join(authority).join(path),
             url,
         })))
     }
 
-    async fn download(&self, target: &dyn VitTarget) -> Result<VitSourceFile> {
+    async fn download(&self, target: &dyn VdmTarget) -> Result<VdmSourceFile> {
         let target = target
             .as_any()
-            .downcast_ref::<VitSourceHttpTarget>()
+            .downcast_ref::<VdmSourceHttpTarget>()
             .context("HTTP source received a target from another source")?;
         let client = Client::builder()
-            .user_agent("vendorit/0.1")
+            .user_agent("vdm/0.1")
             .build()
             .context("failed to create HTTP client")?;
         let response = client
@@ -72,16 +72,16 @@ impl VitSource for VitSourceHttp {
             .context("failed to read downloaded file")?
             .to_vec();
 
-        Ok(VitSourceFile { revision, bytes })
+        Ok(VdmSourceFile { revision, bytes })
     }
 }
 
-impl VitTarget for VitSourceHttpTarget {
-    fn key(&self) -> &VitManifestTargetUrl {
+impl VdmTarget for VdmSourceHttpTarget {
+    fn key(&self) -> &VdmManifestTargetUrl {
         &self.key
     }
 
-    fn version(&self) -> &VitManifestSourceVersion {
+    fn version(&self) -> &VdmManifestSourceVersion {
         &self.version
     }
 
@@ -93,8 +93,8 @@ impl VitTarget for VitSourceHttpTarget {
         self.vendor_path.clone()
     }
 
-    fn source(&self) -> &'static dyn VitSource {
-        &VIT_SOURCE_HTTP
+    fn source(&self) -> &'static dyn VdmSource {
+        &VDM_SOURCE_HTTP
     }
 
     fn as_any(&self) -> &dyn std::any::Any {
@@ -110,25 +110,25 @@ mod tests {
 
     #[test]
     fn parses_direct_http_urls_only() {
-        let target = VIT_SOURCE_HTTP
+        let target = VDM_SOURCE_HTTP
             .parse("https://example.com/assets/file.js?raw=1")
             .unwrap()
             .unwrap();
         assert_eq!(
             target.key(),
-            &VitManifestTargetUrl::new("https://example.com/assets/file.js?raw=1")
+            &VdmManifestTargetUrl::new("https://example.com/assets/file.js?raw=1")
         );
         assert_eq!(
             target.vendor_path(),
             Path::new("@http/example.com/assets/file.js")
         );
         assert!(
-            VIT_SOURCE_HTTP
+            VDM_SOURCE_HTTP
                 .parse("gh:owner/repo/file@main")
                 .unwrap()
                 .is_none()
         );
-        assert!(VIT_SOURCE_HTTP.parse("https://example.com/").is_err());
+        assert!(VDM_SOURCE_HTTP.parse("https://example.com/").is_err());
     }
 
     #[tokio::test]
@@ -145,7 +145,7 @@ mod tests {
                 )
                 .unwrap();
         });
-        let target = VIT_SOURCE_HTTP
+        let target = VDM_SOURCE_HTTP
             .parse(&format!("http://{address}/file.txt"))
             .unwrap()
             .unwrap();

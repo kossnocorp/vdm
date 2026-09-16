@@ -1,12 +1,12 @@
 use crate::prelude::*;
 
-impl VitVendor {
+impl VdmVendor {
     pub async fn add(manifest_path: Option<&Path>, input: &str) -> Result<()> {
-        let target = VitSourceInput::parse_target(input)?;
-        let state = VitState::create().initialize(manifest_path).await?;
+        let target = VdmSourceInput::parse_target(input)?;
+        let state = VdmState::create().initialize(manifest_path).await?;
 
-        let VitState::Initialized(state) = state else {
-            bail!("Failed to initialize Vit state, expected initialized state");
+        let VdmState::Initialized(state) = state else {
+            bail!("Failed to initialize Vdm state, expected initialized state");
         };
 
         let targets = state.manifest.targets()?;

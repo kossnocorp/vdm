@@ -8,8 +8,8 @@ mod args;
 use args::*;
 
 #[derive(Cli)]
-#[usage(run_async, bin = "vit", about = "Vendored dependencies manager")]
-pub struct VitCli {
+#[usage(run_async, bin = "vdm", about = "Vendored dependencies manager")]
+pub struct VdmCli {
     #[usage(subcommand)]
-    pub command: VitCliCmd,
+    pub command: VdmCliCmd,
 }

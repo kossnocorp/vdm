@@ -1,5 +1,5 @@
 {
-  "name": "vit.fyi",
+  "name": "@vdm.fyi/website",
   "private": true,
   "type": "module",
   "imports": {
