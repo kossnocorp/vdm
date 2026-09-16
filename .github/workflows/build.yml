@@ -39,7 +39,7 @@ jobs:
         run: rustup target add ${{ matrix.target }}
 
       - name: Build Binary
-        run: cargo build --locked --release --package vdm_cli --bin vdm --target ${{ matrix.target }}
+        run: cargo build --locked --release --package vdm_fyi --bin vdm --target ${{ matrix.target }}
 
       - name: Derive Binary Extension
         id: binary_extension
