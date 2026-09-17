@@ -77,14 +77,13 @@ impl TryFrom<LockDocument> for VdmLock {
                         let target = VdmSourceInput::parse_manifest_target(&key, &file.version)?;
                         let target = target
                             .as_any()
-                            .downcast_ref::<VdmGitHubTarget>()
-                            .context("Lockfile arrays require a GitHub glob")?;
+                            .downcast_ref::<VdmGitTarget>()
+                            .context("Lockfile arrays require a Git glob")?;
                         ensure!(
                             target.glob()?.is_some(),
                             "Lockfile array key must be a glob"
                         );
-                        let prefix =
-                            PathBuf::from(format!("vendor/@{}/{}", target.owner(), target.repo()));
+                        let prefix = PathBuf::from("vendor").join(target.vendor_root());
                         let path = Path::new(&file.path)
                             .strip_prefix(&prefix)
                             .context("Glob file is outside its repository")?;

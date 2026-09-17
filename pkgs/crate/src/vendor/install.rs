@@ -70,14 +70,14 @@ impl VdmVendor {
                     "{key} is not available from the locked vendor directory in offline mode"
                 );
                 let target = VdmSourceInput::parse_manifest_target(key, &entry.version)?;
-                let download =
-                    if let Some(target) = target.as_any().downcast_ref::<VdmGitHubTarget>() {
-                        VdmGitHubCache::try_new()?
-                            .fetch_revision(target, &entry.revision)
-                            .await?
-                    } else {
-                        target.source().download(target.as_ref()).await?
-                    };
+                let download = if let Some(target) = target.as_any().downcast_ref::<VdmGitTarget>()
+                {
+                    VdmGitCache::try_new()?
+                        .fetch_revision(target, &entry.revision)
+                        .await?
+                } else {
+                    target.source().download(target.as_ref()).await?
+                };
                 let hash = format!("sha256:{:x}", Sha256::digest(&download.bytes));
                 ensure!(
                     hash == entry.hash,
@@ -93,7 +93,7 @@ impl VdmVendor {
             );
             let mut graph: BTreeMap<VdmManifestTargetUrl, VdmGraphFile> = BTreeMap::new();
             for (_, target) in targets {
-                let glob_target = target.as_any().downcast_ref::<VdmGitHubTarget>().cloned();
+                let glob_target = target.as_any().downcast_ref::<VdmGitTarget>().cloned();
                 let resolved = resolve_graph(target).await?;
                 Self::record_glob(&mut state.lock, glob_target.as_ref(), &resolved)?;
                 for (key, file) in resolved {

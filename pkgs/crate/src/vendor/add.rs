@@ -21,16 +21,11 @@ impl VdmVendor {
 
         let key = target.key().clone();
         let mut destination = state.paths.target(target.as_ref());
-        let glob_target = target.as_any().downcast_ref::<VdmGitHubTarget>().cloned();
+        let glob_target = target.as_any().downcast_ref::<VdmGitTarget>().cloned();
         if let Some(target) = &glob_target
             && target.glob()?.is_some()
         {
-            destination = state
-                .paths
-                .root
-                .join("vendor")
-                .join(format!("@{}", target.owner()))
-                .join(target.repo());
+            destination = state.paths.root.join("vendor").join(target.vendor_root());
         }
         let graph = resolve_graph(target).await?;
         let version = Self::graph_version(&graph, &key)?.clone();

@@ -2,8 +2,6 @@ use crate::prelude::*;
 
 use fs2::FileExt;
 use git2::{Oid, Repository};
-// This module runs as one repository transaction inside spawn_blocking. Keeping
-// git2, fs2 locking, and Git subprocesses together preserves cache consistency.
 use std::fs::{self, OpenOptions};
 use std::process::Command;
 use tokio::sync::Semaphore;
@@ -12,46 +10,40 @@ const MAX_CONCURRENT_FETCHES: usize = 4;
 static FETCH_PERMITS: Semaphore = Semaphore::const_new(MAX_CONCURRENT_FETCHES);
 
 #[derive(Clone)]
-pub struct VdmGitHubCache {
+pub struct VdmGitCache {
     root: PathBuf,
 }
 
-impl VdmGitHubCache {
+impl VdmGitCache {
     pub fn try_new() -> Result<Self> {
         let dirs = ProjectDirs::from("fyi", "vdm", "vdm")
             .context("Failed to locate the local data directory")?;
         Ok(Self {
-            root: dirs.data_local_dir().join("git/db/github.com"),
+            root: dirs.data_local_dir().join("git/db"),
         })
     }
 
-    pub async fn fetch(&self, target: VdmGitHubTarget) -> Result<VdmSourceFile> {
+    pub async fn fetch(&self, target: VdmGitTarget) -> Result<VdmSourceFile> {
         let mut files = self.fetch_files(target).await?;
-        ensure!(files.len() == 1, "Expected a single GitHub file");
+        ensure!(files.len() == 1, "Expected a single Git file");
         Ok(files.remove(0).1)
     }
 
     pub(crate) async fn fetch_files(
         &self,
-        target: VdmGitHubTarget,
-    ) -> Result<Vec<(VdmGitHubTarget, VdmSourceFile)>> {
-        let url = format!(
-            "https://github.com/{}/{}.git",
-            target.owner(),
-            target.repo()
-        );
+        target: VdmGitTarget,
+    ) -> Result<Vec<(VdmGitTarget, VdmSourceFile)>> {
+        let url = target.repository_url();
         self.fetch_url(target, url).await
     }
 
-    pub(crate) fn repository(&self, target: &VdmGitHubTarget) -> PathBuf {
-        self.root
-            .join(target.owner())
-            .join(format!("{}.git", target.repo()))
+    pub(crate) fn repository(&self, target: &VdmGitTarget) -> PathBuf {
+        self.root.join(target.cache_path())
     }
 
     pub(crate) async fn fetch_revision(
         &self,
-        target: &VdmGitHubTarget,
+        target: &VdmGitTarget,
         revision: &str,
     ) -> Result<VdmSourceFile> {
         self.fetch(target.with_version(revision)).await
@@ -59,13 +51,13 @@ impl VdmGitHubCache {
 
     async fn fetch_url(
         &self,
-        target: VdmGitHubTarget,
+        target: VdmGitTarget,
         url: String,
-    ) -> Result<Vec<(VdmGitHubTarget, VdmSourceFile)>> {
+    ) -> Result<Vec<(VdmGitTarget, VdmSourceFile)>> {
         let _permit = FETCH_PERMITS
             .acquire()
             .await
-            .context("GitHub fetch concurrency limiter closed")?;
+            .context("Git fetch concurrency limiter closed")?;
         let cache = self.clone();
         tokio::task::spawn_blocking(move || cache.fetch_url_blocking(&target, &url))
             .await
@@ -74,14 +66,15 @@ impl VdmGitHubCache {
 
     fn fetch_url_blocking(
         &self,
-        target: &VdmGitHubTarget,
+        target: &VdmGitTarget,
         url: &str,
-    ) -> Result<Vec<(VdmGitHubTarget, VdmSourceFile)>> {
-        let owner_dir = self.root.join(target.owner());
-        fs::create_dir_all(&owner_dir)
-            .with_context(|| format!("Failed to create {}", owner_dir.display()))?;
+    ) -> Result<Vec<(VdmGitTarget, VdmSourceFile)>> {
+        let repo_path = self.repository(target);
+        let repository_dir = repo_path.parent().context("Git cache has no parent")?;
+        fs::create_dir_all(repository_dir)
+            .with_context(|| format!("Failed to create {}", repository_dir.display()))?;
 
-        let lock_path = owner_dir.join(format!("{}.lock", target.repo()));
+        let lock_path = repo_path.with_extension("lock");
         let lock = OpenOptions::new()
             .create(true)
             .read(true)
@@ -92,7 +85,6 @@ impl VdmGitHubCache {
         lock.lock_exclusive()
             .with_context(|| format!("Failed to lock {}", lock_path.display()))?;
 
-        let repo_path = self.repository(target);
         let repo = if repo_path.exists() {
             Repository::open_bare(&repo_path)
                 .with_context(|| format!("Failed to open Git cache {}", repo_path.display()))?
@@ -150,7 +142,7 @@ impl VdmGitHubCache {
             })?;
             ensure!(
                 !paths.is_empty(),
-                "GitHub glob {} matched no files at commit {}",
+                "Git glob {} matched no files at commit {}",
                 target.path(),
                 commit.id()
             );
@@ -187,7 +179,7 @@ impl VdmGitHubCache {
                 "origin",
             ];
             args.extend(batch.iter().map(String::as_str));
-            git(&repo_path, &args).context("Failed to fetch GitHub file contents")?;
+            git(&repo_path, &args).context("Failed to fetch Git file contents")?;
         }
         paths
             .into_iter()
@@ -251,18 +243,12 @@ fn resolve_remote_ref(repo: &Repository, version: &VdmManifestSourceVersion) -> 
         return Ok(version.as_str().to_owned());
     }
 
-    let mut remote = repo.find_remote("origin")?;
-    remote
-        .connect(git2::Direction::Fetch)
-        .context("Failed to connect to Git origin")?;
-    let names = remote
-        .list()
-        .context("Failed to list Git origin refs")?
-        .iter()
-        .map(|head| head.name())
-        .map(str::to_owned)
+    let remote = repo.find_remote("origin")?;
+    let output = git_remote_refs(remote.url().context("Git origin has no URL")?, false)?;
+    let names = output
+        .lines()
+        .filter_map(|line| line.split_once('\t').map(|(_, name)| name.to_owned()))
         .collect::<Vec<_>>();
-    remote.disconnect()?;
 
     let branch = format!("refs/heads/{version}");
     let tag = format!("refs/tags/{version}");
@@ -273,6 +259,25 @@ fn resolve_remote_ref(repo: &Repository, version: &VdmManifestSourceVersion) -> 
     } else {
         bail!("Git origin does not contain ref {version:?}")
     }
+}
+
+pub(crate) fn git_remote_refs(url: &str, symbolic: bool) -> Result<String> {
+    let mut command = Command::new("git");
+    command.arg("ls-remote");
+    if symbolic {
+        command.arg("--symref");
+    }
+    command.arg("--").arg(url);
+    if symbolic {
+        command.arg("HEAD");
+    }
+    let output = command.output().context("Failed to run git ls-remote")?;
+    ensure!(
+        output.status.success(),
+        "Failed to list Git remote refs: {}",
+        String::from_utf8_lossy(&output.stderr).trim()
+    );
+    String::from_utf8(output.stdout).context("Git remote refs are not UTF-8")
 }
 
 #[cfg(test)]
@@ -313,22 +318,22 @@ mod tests {
             )
             .unwrap();
 
-        let cache = VdmGitHubCache {
+        let cache = VdmGitCache {
             root: temp.path().join("cache"),
         };
         let parsed = VDM_GITHUB_SOURCE
             .parse("gh:owner/repo/file.txt@main")
             .unwrap()
             .unwrap();
-        let target = parsed.as_any().downcast_ref::<VdmGitHubTarget>().unwrap();
+        let target = parsed.as_any().downcast_ref::<VdmGitTarget>().unwrap();
         let download = cache
             .fetch_url(target.clone(), format!("file://{}", source_path.display()))
             .await
             .unwrap();
 
         assert_eq!(download[0].1.bytes, b"first\n");
-        assert!(cache.root.join("owner/repo.git").is_dir());
-        assert!(!cache.root.join("owner/repo.git/file.txt").exists());
+        assert!(cache.repository(target).is_dir());
+        assert!(!cache.repository(target).join("file.txt").exists());
 
         let glob = target.with_path(Path::new("**/*.sh")).unwrap();
         let matches = cache

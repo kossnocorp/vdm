@@ -1,16 +1,21 @@
 use crate::prelude::*;
 
 #[derive(Clone, Debug, PartialEq)]
-pub struct VdmGitHubTarget {
+pub struct VdmGitTarget {
     key: VdmManifestTargetUrl,
-    owner: String,
-    repo: String,
+    repository: GitRepository,
     path: VdmManifestTargetPath,
     version: VdmManifestSourceVersion,
     source_url: String,
 }
 
-impl VdmTarget for VdmGitHubTarget {
+#[derive(Clone, Debug, PartialEq)]
+enum GitRepository {
+    GitHub { owner: String, repo: String },
+    Url(String),
+}
+
+impl VdmTarget for VdmGitTarget {
     fn key(&self) -> &VdmManifestTargetUrl {
         &self.key
     }
@@ -24,13 +29,14 @@ impl VdmTarget for VdmGitHubTarget {
     }
 
     fn vendor_path(&self) -> PathBuf {
-        PathBuf::from(format!("@{}", self.owner))
-            .join(&self.repo)
-            .join(self.path.as_str())
+        self.vendor_root().join(self.path.as_str())
     }
 
     fn source(&self) -> &'static dyn VdmSource {
-        &VDM_GITHUB_SOURCE
+        match self.repository {
+            GitRepository::GitHub { .. } => &VDM_GITHUB_SOURCE,
+            GitRepository::Url(_) => &VDM_GIT_SOURCE,
+        }
     }
 
     fn as_any(&self) -> &dyn std::any::Any {
@@ -38,8 +44,8 @@ impl VdmTarget for VdmGitHubTarget {
     }
 }
 
-impl VdmGitHubTarget {
-    pub(crate) fn new(
+impl VdmGitTarget {
+    pub(crate) fn new_github(
         owner: String,
         repo: String,
         path: VdmManifestTargetPath,
@@ -51,20 +57,54 @@ impl VdmGitHubTarget {
 
         Self {
             key,
-            owner,
-            repo,
+            repository: GitRepository::GitHub { owner, repo },
             path,
             version,
             source_url,
         }
     }
 
-    pub(crate) fn owner(&self) -> &str {
-        &self.owner
+    pub(crate) fn new_git(
+        url: String,
+        path: VdmManifestTargetPath,
+        version: VdmManifestSourceVersion,
+    ) -> Self {
+        Self {
+            key: VdmManifestTargetUrl::new(format!("git:{url}//{path}")),
+            source_url: format!("git:{url}//{path}@{version}"),
+            repository: GitRepository::Url(url),
+            path,
+            version,
+        }
     }
 
-    pub(crate) fn repo(&self) -> &str {
-        &self.repo
+    pub(crate) fn repository_url(&self) -> String {
+        match &self.repository {
+            GitRepository::GitHub { owner, repo } => {
+                format!("https://github.com/{owner}/{repo}.git")
+            }
+            GitRepository::Url(url) => url.clone(),
+        }
+    }
+
+    pub(crate) fn cache_path(&self) -> PathBuf {
+        match &self.repository {
+            GitRepository::GitHub { owner, repo } => PathBuf::from("github.com")
+                .join(owner)
+                .join(format!("{repo}.git")),
+            GitRepository::Url(url) => {
+                PathBuf::from("remotes").join(format!("{:x}.git", Sha256::digest(url.as_bytes())))
+            }
+        }
+    }
+
+    pub(crate) fn vendor_root(&self) -> PathBuf {
+        match &self.repository {
+            GitRepository::GitHub { owner, repo } => PathBuf::from(format!("@{owner}")).join(repo),
+            GitRepository::Url(url) => {
+                PathBuf::from("@git").join(format!("{:x}", Sha256::digest(url.as_bytes())))
+            }
+        }
     }
 
     pub(crate) fn path(&self) -> &str {
@@ -81,7 +121,7 @@ impl VdmGitHubTarget {
                 .literal_separator(true)
                 .backslash_escape(false)
                 .build()
-                .with_context(|| format!("Invalid GitHub glob {:?}", self.path()))?
+                .with_context(|| format!("Invalid Git glob {:?}", self.path()))?
                 .compile_matcher(),
         ))
     }
@@ -91,7 +131,7 @@ impl VdmGitHubTarget {
             return Ok(self);
         }
         tokio::task::spawn_blocking(move || {
-            let url = format!("https://github.com/{}/{}.git", self.owner, self.repo);
+            let url = self.repository_url();
             Ok(self.with_version(&default_branch(&url)?))
         })
         .await
@@ -106,46 +146,37 @@ impl VdmGitHubTarget {
         ensure!(
             path.components()
                 .all(|part| matches!(part, Component::Normal(_))),
-            "Resolved GitHub path {} is outside the repository",
+            "Resolved Git path {} is outside the repository",
             path.display()
         );
         let path = path.to_string_lossy().into_owned();
-        Ok(Self {
-            key: VdmManifestTargetUrl::new(format!("gh:{}/{}/{path}", self.owner, self.repo)),
-            owner: self.owner.clone(),
-            repo: self.repo.clone(),
-            path: VdmManifestTargetPath::new(&path),
-            version: self.version.clone(),
-            source_url: format!(
-                "https://github.com/{}/{}/blob/{}/{path}",
-                self.owner, self.repo, self.version
-            ),
-        })
+        Ok(self.rebuild(VdmManifestTargetPath::new(path), self.version.clone()))
     }
 
     pub(crate) fn with_version(&self, version: &str) -> Self {
-        let mut target = self.clone();
-        target.version = VdmManifestSourceVersion::new(version);
-        target.source_url = format!(
-            "https://github.com/{}/{}/blob/{}/{}",
-            target.owner, target.repo, version, target.path
-        );
-        target
+        self.rebuild(self.path.clone(), VdmManifestSourceVersion::new(version))
+    }
+
+    fn rebuild(&self, path: VdmManifestTargetPath, version: VdmManifestSourceVersion) -> Self {
+        match &self.repository {
+            GitRepository::GitHub { owner, repo } => {
+                Self::new_github(owner.clone(), repo.clone(), path, version)
+            }
+            GitRepository::Url(url) => Self::new_git(url.clone(), path, version),
+        }
     }
 }
 
 fn default_branch(url: &str) -> Result<String> {
-    let mut remote = git2::Remote::create_detached(url)?;
-    remote
-        .connect(git2::Direction::Fetch)
-        .with_context(|| format!("Failed to connect to {url}"))?;
-    let branch = remote.default_branch()?;
-    Ok(branch
-        .as_str()
-        .context("Default branch is not UTF-8")?
-        .strip_prefix("refs/heads/")
-        .context("Invalid default branch ref")?
-        .to_owned())
+    let output = git_remote_refs(url, true)?;
+    output
+        .lines()
+        .find_map(|line| {
+            line.strip_prefix("ref: refs/heads/")?
+                .strip_suffix("\tHEAD")
+                .map(str::to_owned)
+        })
+        .context("Git remote did not advertise a default branch")
 }
 
 #[cfg(test)]

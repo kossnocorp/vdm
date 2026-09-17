@@ -24,6 +24,9 @@ pub use http::*;
 mod github;
 pub use github::*;
 
+mod git;
+pub use git::*;
+
 mod javascript;
 pub use javascript::*;
 

@@ -2,17 +2,19 @@ use crate::prelude::*;
 
 mod parse;
 
-pub static VDM_GITHUB_SOURCE: VdmGithubSource = VdmGithubSource;
+mod download;
 
-pub struct VdmGithubSource;
+pub static VDM_GIT_SOURCE: VdmGitSource = VdmGitSource;
+
+pub struct VdmGitSource;
 
 #[async_trait]
-impl VdmSource for VdmGithubSource {
+impl VdmSource for VdmGitSource {
     fn parse(&self, input: &str) -> Result<Option<Box<dyn VdmTarget>>> {
         self.parse_target(input)
     }
 
     async fn download(&self, target: &dyn VdmTarget) -> Result<VdmSourceFile> {
-        VDM_GIT_SOURCE.download(target).await
+        self.download_file(target).await
     }
 }

@@ -24,7 +24,17 @@ impl VdmManifestTargetUrl {
             "Manifest target path {:?} must be relative and must not contain traversal components",
             path.0
         );
-        Ok(Self(format!("{}/{}", self.0.trim_end_matches('/'), path.0)))
+        let base = self.0.trim_end_matches('/');
+        let separator = if self.0.starts_with("git:")
+            && base
+                .split_once("://")
+                .is_some_and(|(_, repository)| !repository.contains("//"))
+        {
+            "//"
+        } else {
+            "/"
+        };
+        Ok(Self(format!("{base}{separator}{}", path.0)))
     }
 }
 

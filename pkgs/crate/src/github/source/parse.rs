@@ -23,24 +23,14 @@ impl VdmGithubSource {
             )),
             "Repository owner and name must be safe path components"
         );
-        ensure!(!path.is_empty(), "Repository file path must not be empty");
-        ensure!(
-            Path::new(path)
-                .components()
-                .all(|part| matches!(part, Component::Normal(_))),
-            "Repository file path must not contain absolute or traversal components"
-        );
-
-        let valid_ref = version.len() == 40 && version.bytes().all(|byte| byte.is_ascii_hexdigit())
-            || git2::Reference::is_valid_name(&format!("refs/heads/{version}"));
-        ensure!(valid_ref, "Version must be a valid Git ref or commit SHA");
+        VdmGitSource::validate_git_path_and_version(path, version)?;
 
         let owner = owner.to_owned();
         let repo = repo.to_owned();
         let path = VdmManifestTargetPath::new(path);
         let version = VdmManifestSourceVersion::new(version);
 
-        let target = VdmGitHubTarget::new(owner, repo, path, version);
+        let target = VdmGitTarget::new_github(owner, repo, path, version);
         target.glob()?;
         Ok(Some(Box::new(target)))
     }

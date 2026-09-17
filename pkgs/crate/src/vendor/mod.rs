@@ -25,7 +25,7 @@ impl VdmVendor {
 
     fn record_glob(
         lock: &mut VdmLock,
-        target: Option<&VdmGitHubTarget>,
+        target: Option<&VdmGitTarget>,
         graph: &BTreeMap<VdmManifestTargetUrl, VdmGraphFile>,
     ) -> Result<()> {
         if let Some(target) = target
@@ -34,7 +34,7 @@ impl VdmVendor {
             let members = graph
                 .iter()
                 .filter_map(|(key, file)| {
-                    let file = file.target.as_any().downcast_ref::<VdmGitHubTarget>()?;
+                    let file = file.target.as_any().downcast_ref::<VdmGitTarget>()?;
                     matcher.is_match(file.path()).then(|| key.clone())
                 })
                 .collect();
@@ -128,14 +128,10 @@ mod tests {
     async fn github_globs_add_restore_overlap_and_update() {
         // Seed the Git cache with local commits so the full vendor workflow is
         // exercised without depending on GitHub or mutating process environment.
-        let cache = VdmGitHubCache::try_new().unwrap();
+        let cache = VdmGitCache::try_new().unwrap();
         let placeholder = VdmSourceInput::parse_target("gh:fixture/repo/**/*.sh").unwrap();
-        let repository = cache.repository(
-            placeholder
-                .as_any()
-                .downcast_ref::<VdmGitHubTarget>()
-                .unwrap(),
-        );
+        let repository =
+            cache.repository(placeholder.as_any().downcast_ref::<VdmGitTarget>().unwrap());
         let cache_root = repository.parent().unwrap().parent().unwrap();
         fs::create_dir_all(cache_root).unwrap();
         let owner_dir = tempfile::Builder::new()

@@ -17,8 +17,8 @@ pub struct VdmGraphFile {
 pub async fn resolve_graph(
     target: Box<dyn VdmTarget>,
 ) -> Result<BTreeMap<VdmManifestTargetUrl, VdmGraphFile>> {
-    if let Some(target) = target.as_any().downcast_ref::<VdmGitHubTarget>() {
-        return resolve_github_graph(target.clone()).await;
+    if let Some(target) = target.as_any().downcast_ref::<VdmGitTarget>() {
+        return resolve_git_graph(target.clone()).await;
     }
     if let Some(target) = target.as_any().downcast_ref::<VdmHttpTarget>() {
         return resolve_http_graph(target.clone()).await;
@@ -140,10 +140,10 @@ async fn resolve_http_graph(
     Ok(files)
 }
 
-async fn resolve_github_graph(
-    root: VdmGitHubTarget,
+async fn resolve_git_graph(
+    root: VdmGitTarget,
 ) -> Result<BTreeMap<VdmManifestTargetUrl, VdmGraphFile>> {
-    let cache = VdmGitHubCache::try_new()?;
+    let cache = VdmGitCache::try_new()?;
     let root = root.resolve_version().await?;
     let downloads = cache.fetch_files(root.clone()).await?;
     let revision = downloads[0].1.revision.clone();
@@ -209,7 +209,7 @@ async fn resolve_github_graph(
                 Ok::<_, Error>((resolver, dependencies))
             })
             .await
-            .context("Rust GitHub dependency resolution task failed")??;
+            .context("Rust Git dependency resolution task failed")??;
             rust_resolver = Some(next);
             for path in resolved {
                 let dependency = target.with_path(&path)?;

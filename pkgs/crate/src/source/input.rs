@@ -4,14 +4,17 @@ pub struct VdmSourceInput;
 
 impl VdmSourceInput {
     pub fn parse_target(input: &str) -> Result<Box<dyn VdmTarget>> {
-        let sources: [&'static dyn VdmSource; 2] = [&VDM_GITHUB_SOURCE, &VDM_HTTP_SOURCE];
+        let sources: [&'static dyn VdmSource; 3] =
+            [&VDM_GITHUB_SOURCE, &VDM_GIT_SOURCE, &VDM_HTTP_SOURCE];
         for source in sources {
             if let Some(target) = source.parse(input)? {
                 return Ok(target);
             }
         }
 
-        bail!("Unsupported source {input:?}; expected gh:owner/repo/path@version or an HTTP URL")
+        bail!(
+            "Unsupported source {input:?}; expected gh:owner/repo/path[@ref], git:<repository-url>//path[@ref], or an HTTP URL"
+        )
     }
 
     pub fn parse_manifest_target(
@@ -39,7 +42,7 @@ mod tests {
             VdmSourceInput::parse_target("gh:js-fns/js-fns/vitest.config.ts@main")
                 .unwrap()
                 .as_any()
-                .is::<VdmGitHubTarget>()
+                .is::<VdmGitTarget>()
         );
         assert!(
             VdmSourceInput::parse_target("https://example.com/assets/file.js")

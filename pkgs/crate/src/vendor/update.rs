@@ -41,7 +41,7 @@ impl VdmVendor {
 
         let mut state = state.as_locked().await?;
         let key = target.key().clone();
-        let glob_target = target.as_any().downcast_ref::<VdmGitHubTarget>().cloned();
+        let glob_target = target.as_any().downcast_ref::<VdmGitTarget>().cloned();
         let graph = resolve_graph(target).await?;
         let requested_version = Self::graph_version(&graph, &key)?.clone();
         let direct = targets.keys().cloned().collect::<BTreeSet<_>>();
