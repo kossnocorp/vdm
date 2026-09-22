@@ -148,7 +148,34 @@ impl VdmGitCache {
             );
             paths.sort();
         } else {
-            paths.push(target.path().to_owned());
+            let path = target.path().trim_end_matches('/');
+            let entry = tree
+                .get_path(Path::new(path))
+                .with_context(|| format!("{path} is not present at commit {}", commit.id()))?;
+            if entry.kind() == Some(git2::ObjectType::Tree) {
+                let folder = repo.find_tree(entry.id())?;
+                folder.walk(git2::TreeWalkMode::PreOrder, |directory, entry| {
+                    if entry.kind() == Some(git2::ObjectType::Blob)
+                        && let Some(name) = entry.name()
+                    {
+                        paths.push(format!("{path}/{directory}{name}"));
+                    }
+                    git2::TreeWalkResult::Ok
+                })?;
+                ensure!(
+                    !paths.is_empty(),
+                    "Git folder {path} contains no files at commit {}",
+                    commit.id()
+                );
+                paths.sort();
+            } else {
+                ensure!(
+                    !target.path().ends_with('/'),
+                    "{path} is not a folder at commit {}",
+                    commit.id()
+                );
+                paths.push(path.to_owned());
+            }
         }
         // Partial clones initially contain only trees. Fetch missing blobs in
         // batches rather than paying for a network round trip for every match.
@@ -300,6 +327,10 @@ mod tests {
         for path in ["root.sh", "nested/a.sh", "nested/deep/b.sh"] {
             fs::write(source_path.join(path), path).unwrap();
         }
+        fs::write(source_path.join("nested/.hidden"), b"hidden").unwrap();
+        fs::write(source_path.join("nested/deep/data.bin"), [0, 255, 128]).unwrap();
+        fs::create_dir(source_path.join("nested-other")).unwrap();
+        fs::write(source_path.join("nested-other/outside.txt"), "outside").unwrap();
         let mut index = source.index().unwrap();
         index
             .add_all(["*"], git2::IndexAddOption::DEFAULT, None)
@@ -334,6 +365,53 @@ mod tests {
         assert_eq!(download[0].1.bytes, b"first\n");
         assert!(cache.repository(target).is_dir());
         assert!(!cache.repository(target).join("file.txt").exists());
+
+        for path in ["nested", "nested/", "nest*/"] {
+            let folder = target.with_path(Path::new(path)).unwrap();
+            let files = cache
+                .fetch_url(folder, format!("file://{}", source_path.display()))
+                .await
+                .unwrap();
+            let expected = if path == "nest*/" {
+                vec![
+                    "nested-other/outside.txt",
+                    "nested/.hidden",
+                    "nested/a.sh",
+                    "nested/deep/b.sh",
+                    "nested/deep/data.bin",
+                ]
+            } else {
+                vec![
+                    "nested/.hidden",
+                    "nested/a.sh",
+                    "nested/deep/b.sh",
+                    "nested/deep/data.bin",
+                ]
+            };
+            assert_eq!(
+                files
+                    .iter()
+                    .map(|(target, _)| target.path())
+                    .collect::<Vec<_>>(),
+                expected
+            );
+            let (_, binary) = files
+                .iter()
+                .find(|(target, _)| target.path().ends_with("data.bin"))
+                .unwrap();
+            assert_eq!(binary.bytes, [0, 255, 128]);
+        }
+        for path in ["missing/", "file.txt/"] {
+            assert!(
+                cache
+                    .fetch_url(
+                        target.with_path(Path::new(path)).unwrap(),
+                        format!("file://{}", source_path.display())
+                    )
+                    .await
+                    .is_err()
+            );
+        }
 
         let glob = target.with_path(Path::new("**/*.sh")).unwrap();
         let matches = cache

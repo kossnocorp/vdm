@@ -6,7 +6,7 @@ pub use file::*;
 #[derive(Debug, Deserialize, Serialize, Default, Clone)]
 #[serde(try_from = "LockDocument", into = "LockDocument")]
 pub struct VdmLock {
-    // Keep a shared file graph in memory; serialize glob members as arrays
+    // Keep a shared file graph in memory; serialize glob and folder members as arrays
     // under their original manifest keys rather than duplicating file tables.
     pub files: BTreeMap<VdmManifestTargetUrl, VdmLockFile>,
     pub globs: BTreeMap<VdmManifestTargetUrl, Vec<VdmManifestTargetUrl>>,
@@ -78,16 +78,17 @@ impl TryFrom<LockDocument> for VdmLock {
                         let target = target
                             .as_any()
                             .downcast_ref::<VdmGitTarget>()
-                            .context("Lockfile arrays require a Git glob")?;
-                        ensure!(
-                            target.glob()?.is_some(),
-                            "Lockfile array key must be a glob"
-                        );
+                            .context("Lockfile arrays require a Git glob or folder")?;
                         let prefix = PathBuf::from("vendor").join(target.vendor_root());
                         let path = Path::new(&file.path)
                             .strip_prefix(&prefix)
-                            .context("Glob file is outside its repository")?;
-                        let member = target.with_path(path)?.key().clone();
+                            .context("Grouped file is outside its repository")?;
+                        let member_target = target.with_path(path)?;
+                        ensure!(
+                            target.matches_member(&member_target)?,
+                            "Lockfile member does not match its Git glob or folder"
+                        );
+                        let member = member_target.key().clone();
                         insert_file(&mut lock.files, member.clone(), file)?;
                         members.push(member);
                     }

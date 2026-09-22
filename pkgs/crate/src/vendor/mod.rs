@@ -29,15 +29,19 @@ impl VdmVendor {
         graph: &BTreeMap<VdmManifestTargetUrl, VdmGraphFile>,
     ) -> Result<()> {
         if let Some(target) = target
-            && let Some(matcher) = target.glob()?
+            && (target.glob()?.is_some() || !graph.contains_key(target.key()))
         {
             let members = graph
                 .iter()
                 .filter_map(|(key, file)| {
                     let file = file.target.as_any().downcast_ref::<VdmGitTarget>()?;
-                    matcher.is_match(file.path()).then(|| key.clone())
+                    match target.matches_member(file) {
+                        Ok(true) => Some(Ok(key.clone())),
+                        Ok(false) => None,
+                        Err(error) => Some(Err(error)),
+                    }
                 })
-                .collect();
+                .collect::<Result<Vec<_>>>()?;
             lock.globs.insert(target.key().clone(), members);
         }
         Ok(())
@@ -126,6 +130,19 @@ mod tests {
 
     #[tokio::test]
     async fn github_globs_add_restore_overlap_and_update() {
+        github_group_add_restore_overlap_and_update("**/*.sh", "nested/*.sh", 2).await;
+    }
+
+    #[tokio::test]
+    async fn github_folders_add_restore_overlap_and_update() {
+        github_group_add_restore_overlap_and_update("nested", "nested/", 1).await;
+    }
+
+    async fn github_group_add_restore_overlap_and_update(
+        selection: &str,
+        overlap: &str,
+        count: usize,
+    ) {
         // Seed the Git cache with local commits so the full vendor workflow is
         // exercised without depending on GitHub or mutating process environment.
         let cache = VdmGitCache::try_new().unwrap();
@@ -162,14 +179,14 @@ mod tests {
         let second = commit("b.sh", b"second");
         let directory = tempfile::tempdir().unwrap();
         let paths = VdmPaths::resolve(Some(directory.path())).await.unwrap();
-        let key = VdmManifestTargetUrl::new(format!("gh:{owner}/repo/**/*.sh"));
+        let key = VdmManifestTargetUrl::new(format!("gh:{owner}/repo/{selection}"));
         VdmVendor::add(Some(directory.path()), &format!("{key}@{first}"))
             .await
             .unwrap();
         let manifest = VdmManifest::read_toml(&paths.manifest).await.unwrap();
         assert_eq!(manifest.targets().unwrap()[&key].version().as_str(), first);
         let lock = VdmLock::read_toml(&paths.lock).await.unwrap();
-        assert_eq!(lock.globs[&key].len(), 2);
+        assert_eq!(lock.globs[&key].len(), count);
         let nested = directory
             .path()
             .join(format!("vendor/@{owner}/repo/nested"));
@@ -190,7 +207,7 @@ mod tests {
                 .exists()
         );
 
-        let overlapping = VdmManifestTargetUrl::new(format!("gh:{owner}/repo/nested/*.sh"));
+        let overlapping = VdmManifestTargetUrl::new(format!("gh:{owner}/repo/{overlap}"));
         VdmVendor::add(Some(directory.path()), &format!("{overlapping}@{first}"))
             .await
             .unwrap();

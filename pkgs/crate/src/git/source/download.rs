@@ -19,6 +19,17 @@ mod tests {
 
     #[tokio::test]
     async fn git_globs_resolve_dependencies_update_and_restore_locked_revisions() {
+        git_group_resolves_dependencies_update_and_restore("src/*.ts").await;
+    }
+
+    #[tokio::test]
+    async fn git_folders_resolve_dependencies_update_and_restore_locked_revisions() {
+        for path in ["src", "src/"] {
+            git_group_resolves_dependencies_update_and_restore(path).await;
+        }
+    }
+
+    async fn git_group_resolves_dependencies_update_and_restore(selection: &str) {
         use std::fs;
         let source_dir = tempfile::tempdir().unwrap();
         let source = git2::Repository::init(source_dir.path()).unwrap();
@@ -51,7 +62,7 @@ mod tests {
             .tag_lightweight("v1", &source.find_object(first, None).unwrap(), false)
             .unwrap();
         let url = Url::from_file_path(source_dir.path()).unwrap();
-        let key = VdmManifestTargetUrl::new(format!("git:{url}//src/*.ts"));
+        let key = VdmManifestTargetUrl::new(format!("git:{url}//{selection}"));
         let directory = tempfile::tempdir().unwrap();
         let paths = VdmPaths::resolve(Some(directory.path())).await.unwrap();
         VdmVendor::add(Some(directory.path()), key.as_str())

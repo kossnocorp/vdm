@@ -116,14 +116,32 @@ impl VdmGitTarget {
             return Ok(None);
         }
 
+        let pattern = if self.path().ends_with('/') {
+            format!("{}**", self.path())
+        } else {
+            self.path().to_owned()
+        };
         Ok(Some(
-            globset::GlobBuilder::new(self.path())
+            globset::GlobBuilder::new(&pattern)
                 .literal_separator(true)
                 .backslash_escape(false)
                 .build()
                 .with_context(|| format!("Invalid Git glob {:?}", self.path()))?
                 .compile_matcher(),
         ))
+    }
+
+    pub(crate) fn matches_member(&self, file: &Self) -> Result<bool> {
+        if self.repository != file.repository {
+            return Ok(false);
+        }
+        Ok(if let Some(matcher) = self.glob()? {
+            matcher.is_match(file.path())
+        } else {
+            file.path()
+                .strip_prefix(self.path().trim_end_matches('/'))
+                .is_some_and(|suffix| suffix.starts_with('/'))
+        })
     }
 
     pub(crate) async fn resolve_version(self) -> Result<Self> {
