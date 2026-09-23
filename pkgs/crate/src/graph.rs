@@ -72,7 +72,7 @@ async fn resolve_http_graph(
                 let Some(url) = url else {
                     continue;
                 };
-                let dependency = VdmSourceInput::parse_target(url.as_str())?;
+                let dependency = VdmSourceInput::parse_target(&format!("http:{url}"))?;
                 let dependency = dependency
                     .as_any()
                     .downcast_ref::<VdmHttpTarget>()
@@ -114,7 +114,7 @@ async fn resolve_http_graph(
             rust_resolver = Some(next);
             for path in resolved {
                 let url = http_origin(&final_url).join(&path.to_string_lossy())?;
-                let dependency = VdmSourceInput::parse_target(url.as_str())?;
+                let dependency = VdmSourceInput::parse_target(&format!("http:{url}"))?;
                 let dependency = dependency
                     .as_any()
                     .downcast_ref::<VdmHttpTarget>()

@@ -62,10 +62,11 @@ mod tests {
             .tag_lightweight("v1", &source.find_object(first, None).unwrap(), false)
             .unwrap();
         let url = Url::from_file_path(source_dir.path()).unwrap();
-        let key = VdmManifestTargetUrl::new(format!("git:{url}//{selection}"));
+        let input = format!("{url}:{selection}");
+        let key = VdmSourceInput::parse_target(&input).unwrap().key().clone();
         let directory = tempfile::tempdir().unwrap();
         let paths = VdmPaths::resolve(Some(directory.path())).await.unwrap();
-        VdmVendor::add(Some(directory.path()), key.as_str())
+        VdmVendor::add(Some(directory.path()), &input)
             .await
             .unwrap();
         let manifest = VdmManifest::read_toml(&paths.manifest).await.unwrap();
@@ -74,6 +75,15 @@ mod tests {
             "custom/default"
         );
         let lock = VdmLock::read_toml(&paths.lock).await.unwrap();
+        if !selection.contains('*') {
+            let error = VdmVendor::add(
+                Some(directory.path()),
+                &format!("git:{url}:/src/nested/.././"),
+            )
+            .await
+            .unwrap_err();
+            assert!(error.to_string().contains("already present"));
+        }
         assert_eq!(lock.files.len(), 2);
         assert_eq!(lock.globs[&key].len(), 1);
         assert!(
@@ -81,8 +91,8 @@ mod tests {
                 .values()
                 .all(|file| file.revision == first.to_string())
         );
-        let root_key = VdmManifestTargetUrl::new(format!("git:{url}//src/root.ts"));
-        let dep_key = VdmManifestTargetUrl::new(format!("git:{url}//dep.ts"));
+        let root_key = VdmManifestTargetUrl::new(format!("git:{url}:src/root.ts"));
+        let dep_key = VdmManifestTargetUrl::new(format!("git:{url}:dep.ts"));
         assert_eq!(lock.files[&root_key].dependencies, vec![dep_key.clone()]);
         let second = commit("second", "other");
         let root_path = paths.root.join(&lock.files[&root_key].path);
@@ -99,7 +109,12 @@ mod tests {
             fs::read_to_string(&root_path).unwrap(),
             "import '../dep';\n"
         );
-        VdmVendor::update(Some(directory.path()), key.as_str(), false)
+        let update = if selection.contains('*') {
+            key.to_string()
+        } else {
+            format!("git:{url}:src/nested/..")
+        };
+        VdmVendor::update(Some(directory.path()), &update, false)
             .await
             .unwrap();
         let updated = VdmLock::read_toml(&paths.lock).await.unwrap();
@@ -115,8 +130,7 @@ mod tests {
             .await
             .unwrap();
         for version in ["v1".to_owned(), first.to_string()] {
-            let target =
-                VdmSourceInput::parse_target(&format!("git:{url}//dep.ts@{version}")).unwrap();
+            let target = VdmSourceInput::parse_target(&format!("{url}:dep.ts@{version}")).unwrap();
             let file = target.source().download(target.as_ref()).await.unwrap();
             assert_eq!(file.bytes, b"first");
             assert_eq!(file.revision, first.to_string());

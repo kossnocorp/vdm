@@ -43,7 +43,7 @@ impl VdmTarget for VdmHttpTarget {
     }
 
     fn source_url(&self) -> &str {
-        self.key.as_str()
+        self.url.as_str()
     }
 
     fn vendor_path(&self) -> PathBuf {

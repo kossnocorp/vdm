@@ -51,7 +51,12 @@ impl VdmGitTarget {
         path: VdmManifestTargetPath,
         version: VdmManifestSourceVersion,
     ) -> Self {
-        let source = format!("{owner}/{repo}/{path}");
+        let suffix = if path.as_str().is_empty() {
+            String::new()
+        } else {
+            format!(":{path}")
+        };
+        let source = format!("{owner}/{repo}{suffix}");
         let key = VdmManifestTargetUrl::new(format!("gh:{source}"));
         let source_url = format!("https://github.com/{owner}/{repo}/blob/{version}/{path}");
 
@@ -69,9 +74,15 @@ impl VdmGitTarget {
         path: VdmManifestTargetPath,
         version: VdmManifestSourceVersion,
     ) -> Self {
+        let suffix = if path.as_str().is_empty() {
+            String::new()
+        } else {
+            format!(":{path}")
+        };
+        let key = VdmManifestTargetUrl::new(format!("git:{url}{suffix}"));
         Self {
-            key: VdmManifestTargetUrl::new(format!("git:{url}//{path}")),
-            source_url: format!("git:{url}//{path}@{version}"),
+            source_url: format!("{key}@{version}"),
+            key,
             repository: GitRepository::Url(url),
             path,
             version,
@@ -100,9 +111,27 @@ impl VdmGitTarget {
 
     pub(crate) fn vendor_root(&self) -> PathBuf {
         match &self.repository {
-            GitRepository::GitHub { owner, repo } => PathBuf::from(format!("@{owner}")).join(repo),
+            GitRepository::GitHub { owner, repo } => PathBuf::from("@gh").join(owner).join(repo),
             GitRepository::Url(url) => {
-                PathBuf::from("@git").join(format!("{:x}", Sha256::digest(url.as_bytes())))
+                let directory = url
+                    .split("://")
+                    .flat_map(|part| part.split('/'))
+                    .map(|part| {
+                        part.bytes()
+                            .map(|byte| {
+                                if byte.is_ascii_alphanumeric() || matches!(byte, b'.' | b'-') {
+                                    char::from(byte).to_string()
+                                } else {
+                                    // Escape filesystem-sensitive bytes and underscores so
+                                    // literal URL text cannot collide with our __ separators.
+                                    format!("%{byte:02X}")
+                                }
+                            })
+                            .collect::<String>()
+                    })
+                    .collect::<Vec<_>>()
+                    .join("__");
+                PathBuf::from("@git").join(directory)
             }
         }
     }
@@ -137,6 +166,8 @@ impl VdmGitTarget {
         }
         Ok(if let Some(matcher) = self.glob()? {
             matcher.is_match(file.path())
+        } else if self.path().is_empty() {
+            true
         } else {
             file.path()
                 .strip_prefix(self.path().trim_end_matches('/'))
@@ -202,6 +233,34 @@ mod tests {
     use super::*;
 
     #[test]
+    fn derives_vendor_directories_from_repository_urls() {
+        for (url, directory) in [
+            (
+                "git://git.git.savannah.gnu.org/bash.git",
+                "git__git.git.savannah.gnu.org__bash.git",
+            ),
+            (
+                "https://https.git.savannah.gnu.org/git/bash.git",
+                "https__https.git.savannah.gnu.org__git__bash.git",
+            ),
+            (
+                "ssh://git@example.com:2222/team/repo.git",
+                "ssh__git%40example.com%3A2222__team__repo.git",
+            ),
+            (
+                "https://example.com/team__repo.git",
+                "https__example.com__team%5F%5Frepo.git",
+            ),
+        ] {
+            let target = VdmSourceInput::parse_target(&format!("{url}:tests/")).unwrap();
+            assert_eq!(
+                target.vendor_path(),
+                Path::new("@git").join(directory).join("tests")
+            );
+        }
+    }
+
+    #[test]
     fn resolves_the_remote_default_branch() {
         let temp = tempfile::tempdir().unwrap();
         let repo = git2::Repository::init_bare(temp.path()).unwrap();
@@ -226,10 +285,10 @@ mod tests {
             );
         }
         let target = VDM_GITHUB_SOURCE
-            .parse("gh:owner/repo/file")
+            .parse("gh:owner/repo:file")
             .unwrap()
             .unwrap();
         assert_eq!(target.version().as_str(), "HEAD");
-        assert!(VDM_GITHUB_SOURCE.parse("gh:owner/repo/file@").is_err());
+        assert!(VDM_GITHUB_SOURCE.parse("gh:owner/repo:file@").is_err());
     }
 }

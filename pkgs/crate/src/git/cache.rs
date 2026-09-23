@@ -149,16 +149,29 @@ impl VdmGitCache {
             paths.sort();
         } else {
             let path = target.path().trim_end_matches('/');
-            let entry = tree
-                .get_path(Path::new(path))
-                .with_context(|| format!("{path} is not present at commit {}", commit.id()))?;
-            if entry.kind() == Some(git2::ObjectType::Tree) {
-                let folder = repo.find_tree(entry.id())?;
+            let folder = if path.is_empty() {
+                Some(tree.clone())
+            } else {
+                let entry = tree
+                    .get_path(Path::new(path))
+                    .with_context(|| format!("{path} is not present at commit {}", commit.id()))?;
+                if entry.kind() == Some(git2::ObjectType::Tree) {
+                    Some(repo.find_tree(entry.id())?)
+                } else {
+                    None
+                }
+            };
+            if let Some(folder) = folder {
+                let prefix = if path.is_empty() {
+                    String::new()
+                } else {
+                    format!("{path}/")
+                };
                 folder.walk(git2::TreeWalkMode::PreOrder, |directory, entry| {
                     if entry.kind() == Some(git2::ObjectType::Blob)
                         && let Some(name) = entry.name()
                     {
-                        paths.push(format!("{path}/{directory}{name}"));
+                        paths.push(format!("{prefix}{directory}{name}"));
                     }
                     git2::TreeWalkResult::Ok
                 })?;
@@ -353,7 +366,7 @@ mod tests {
             root: temp.path().join("cache"),
         };
         let parsed = VDM_GITHUB_SOURCE
-            .parse("gh:owner/repo/file.txt@main")
+            .parse("gh:owner/repo:file.txt@main")
             .unwrap()
             .unwrap();
         let target = parsed.as_any().downcast_ref::<VdmGitTarget>().unwrap();
@@ -480,7 +493,7 @@ mod tests {
         VdmVendor::install(Some(temp.path()), true).await.unwrap();
         assert!(
             temp.path()
-                .join("vendor/@owner/repo/nested/deep/b.sh")
+                .join("vendor/@gh/owner/repo/nested/deep/b.sh")
                 .is_file()
         );
         VdmManifest::new()
@@ -488,6 +501,6 @@ mod tests {
             .await
             .unwrap();
         VdmVendor::install(Some(temp.path()), true).await.unwrap();
-        assert!(!temp.path().join("vendor/@owner").exists());
+        assert!(!temp.path().join("vendor/@gh").exists());
     }
 }

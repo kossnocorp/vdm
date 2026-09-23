@@ -7,10 +7,41 @@ mod target;
 pub use target::*;
 
 #[derive(Debug, Deserialize, Serialize, Default)]
-#[serde(deny_unknown_fields)]
+#[serde(try_from = "ManifestDocument")]
 pub struct VdmManifest {
     #[serde(default)]
     sources: BTreeMap<VdmManifestTargetUrl, VdmManifestSource>,
+}
+
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+struct ManifestDocument {
+    #[serde(default)]
+    sources: BTreeMap<VdmManifestTargetUrl, VdmManifestSource>,
+}
+
+impl TryFrom<ManifestDocument> for VdmManifest {
+    type Error = Error;
+
+    fn try_from(document: ManifestDocument) -> Result<Self> {
+        let mut sources = BTreeMap::new();
+        for (key, source) in document.sources {
+            let key = match &source {
+                VdmManifestSource::File(file) => {
+                    VdmSourceInput::parse_manifest_target(&key, file.version())?
+                        .key()
+                        .clone()
+                }
+                VdmManifestSource::Files(_) => VdmSourceInput::normalize_base(key.as_str())?,
+            };
+            ensure!(
+                !sources.contains_key(&key),
+                "Manifest source {key} is defined more than once"
+            );
+            sources.insert(key, source);
+        }
+        Ok(Self { sources })
+    }
 }
 
 impl VdmManifest {
@@ -85,12 +116,61 @@ mod tests {
     use super::*;
 
     #[test]
+    fn normalizes_manifest_sources_before_matching_and_serializing() {
+        let mut manifest: VdmManifest = toml::from_str(r#"
+[sources]
+"https://github.com/kossnocorp/genotype.git:tests/nested/.." = "main"
+"https://example.com/repo.git:tests////" = "main"
+"https://example.com/file.js" = "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+
+[sources."git@github.com:kossnocorp/genotype.git"]
+version = "main"
+files = ["src/./file.txt"]
+"#).unwrap();
+        for key in [
+            "gh:kossnocorp/genotype:tests",
+            "git:https://example.com/repo.git:tests",
+            "gh:kossnocorp/genotype:src/file.txt",
+        ] {
+            manifest
+                .update(
+                    &VdmManifestTargetUrl::new(key),
+                    &VdmManifestSourceVersion::new("next"),
+                )
+                .unwrap();
+        }
+        let targets = manifest.targets().unwrap();
+        assert_eq!(targets.len(), 4);
+        assert!(targets.contains_key(&VdmManifestTargetUrl::new(
+            "http:https://example.com/file.js"
+        )));
+        let serialized = toml::to_string(&manifest).unwrap();
+        assert!(!serialized.contains("github.com"));
+        assert!(serialized.contains("git:https://example.com/repo.git:tests"));
+        let restored: VdmManifest = toml::from_str(&serialized).unwrap();
+        assert_eq!(
+            restored.targets().unwrap().keys().collect::<Vec<_>>(),
+            targets.keys().collect::<Vec<_>>()
+        );
+        assert!(
+            toml::from_str::<VdmManifest>(
+                r#"
+[sources]
+"gh:owner/repo:tests" = "main"
+"https://github.com/owner/repo.git:tests/./" = "main"
+"#
+            )
+            .is_err()
+        );
+    }
+
+    #[test]
     fn resolves_all_manifest_source_forms() {
         let manifest: VdmManifest = toml::from_str(
             r#"
 [sources]
-"gh:kossnocorp/dev/README.md" = "main"
-"gh:kossnocorp/dev/LICENSE" = { version = "v1" }
+"gh:kossnocorp/dev:README.md" = "main"
+"gh:kossnocorp/dev:LICENSE" = { version = "v1" }
 
 [sources."gh:kossnocorp/dev"]
 version = "v2"
@@ -112,19 +192,19 @@ files = [
         let targets = manifest.targets().unwrap();
         assert_eq!(targets.len(), 4);
         assert_eq!(
-            targets[&VdmManifestTargetUrl::new("gh:kossnocorp/dev/README.md")].version(),
+            targets[&VdmManifestTargetUrl::new("gh:kossnocorp/dev:README.md")].version(),
             &VdmManifestSourceVersion::new("main")
         );
         assert_eq!(
-            targets[&VdmManifestTargetUrl::new("gh:kossnocorp/dev/LICENSE")].version(),
+            targets[&VdmManifestTargetUrl::new("gh:kossnocorp/dev:LICENSE")].version(),
             &VdmManifestSourceVersion::new("v1")
         );
         assert_eq!(
-            targets[&VdmManifestTargetUrl::new("gh:kossnocorp/dev/mise.toml")].version(),
+            targets[&VdmManifestTargetUrl::new("gh:kossnocorp/dev:mise.toml")].version(),
             &VdmManifestSourceVersion::new("v2")
         );
         assert_eq!(
-            targets[&VdmManifestTargetUrl::new("gh:kossnocorp/dev/package.json")].version(),
+            targets[&VdmManifestTargetUrl::new("gh:kossnocorp/dev:package.json")].version(),
             &VdmManifestSourceVersion::new("v3")
         );
     }
@@ -134,7 +214,7 @@ files = [
         let manifest: VdmManifest = toml::from_str(
             r#"
 [sources]
-"gh:kossnocorp/dev/mise.toml" = "main"
+"gh:kossnocorp/dev:mise.toml" = "main"
 
 [sources."gh:kossnocorp/dev"]
 version = "main"
@@ -170,7 +250,7 @@ files = ["../secret"]
                 .err()
                 .unwrap()
                 .to_string()
-                .contains("must be relative")
+                .contains("must not escape")
         );
     }
 
@@ -180,7 +260,7 @@ files = ["../secret"]
             toml::from_str::<VdmManifest>(
                 r#"
 [files]
-"gh:kossnocorp/dev/mise.toml" = "main"
+"gh:kossnocorp/dev:mise.toml" = "main"
 "#,
             )
             .is_err()
@@ -191,14 +271,14 @@ files = ["../secret"]
     fn add_serializes_a_direct_scalar_source() {
         let mut manifest = VdmManifest::new();
         manifest.add(
-            &VdmManifestTargetUrl::new("gh:kossnocorp/dev/mise.toml"),
+            &VdmManifestTargetUrl::new("gh:kossnocorp/dev:mise.toml"),
             &VdmManifestSourceVersion::new("main"),
         );
 
         let source = toml::to_string_pretty(&manifest).unwrap();
         assert_eq!(
             source,
-            "[sources]\n\"gh:kossnocorp/dev/mise.toml\" = \"main\"\n"
+            "[sources]\n\"gh:kossnocorp/dev:mise.toml\" = \"main\"\n"
         );
     }
 
@@ -207,7 +287,7 @@ files = ["../secret"]
         let mut manifest: VdmManifest = toml::from_str(
             r#"
 [sources]
-"gh:kossnocorp/dev/README.md" = "old"
+"gh:kossnocorp/dev:README.md" = "old"
 
 [sources."gh:kossnocorp/dev"]
 version = "old"
@@ -218,19 +298,19 @@ files = ["mise.toml", { path = "package.json", version = "older" }]
         let version = VdmManifestSourceVersion::new("main");
         manifest
             .update(
-                &VdmManifestTargetUrl::new("gh:kossnocorp/dev/README.md"),
+                &VdmManifestTargetUrl::new("gh:kossnocorp/dev:README.md"),
                 &version,
             )
             .unwrap();
         manifest
             .update(
-                &VdmManifestTargetUrl::new("gh:kossnocorp/dev/mise.toml"),
+                &VdmManifestTargetUrl::new("gh:kossnocorp/dev:mise.toml"),
                 &version,
             )
             .unwrap();
         manifest
             .update(
-                &VdmManifestTargetUrl::new("gh:kossnocorp/dev/package.json"),
+                &VdmManifestTargetUrl::new("gh:kossnocorp/dev:package.json"),
                 &version,
             )
             .unwrap();

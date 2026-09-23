@@ -1,6 +1,6 @@
 use crate::prelude::*;
 
-/// Target URL, e.g., "gh:kossnocorp/dev/mise.toml" or "gh:kossnocorp/dev".
+/// Target URL, e.g., "gh:kossnocorp/dev:mise.toml" or "gh:kossnocorp/dev".
 #[derive(Clone, Debug, Deserialize, Serialize, PartialEq, Eq, Hash, PartialOrd, Ord)]
 #[serde(transparent)]
 pub struct VdmManifestTargetUrl(String);
@@ -17,6 +17,17 @@ impl VdmManifestTargetUrl {
     pub fn join(&self, path: &VdmManifestTargetPath) -> Result<Self> {
         ensure!(!self.0.is_empty(), "Manifest target URL must not be empty");
         ensure!(!path.0.is_empty(), "Manifest target path must not be empty");
+        let base = VdmSourceInput::normalize_base(&self.0)?;
+        let base = base.as_str();
+        if base.starts_with("gh:") || base.starts_with("git:") {
+            let repository_base = if let Some(github) = base.strip_prefix("gh:") {
+                !github.contains(':')
+            } else {
+                VdmGitSource::split_repository_path(base.strip_prefix("git:").unwrap()).is_none()
+            };
+            let separator = if repository_base { ":" } else { "/" };
+            return VdmSourceInput::normalize_base(&format!("{base}{separator}{}", path.0));
+        }
         ensure!(
             Path::new(&path.0)
                 .components()
@@ -24,17 +35,7 @@ impl VdmManifestTargetUrl {
             "Manifest target path {:?} must be relative and must not contain traversal components",
             path.0
         );
-        let base = self.0.trim_end_matches('/');
-        let separator = if self.0.starts_with("git:")
-            && base
-                .split_once("://")
-                .is_some_and(|(_, repository)| !repository.contains("//"))
-        {
-            "//"
-        } else {
-            "/"
-        };
-        Ok(Self(format!("{base}{separator}{}", path.0)))
+        Ok(Self(format!("{base}/{}", path.0)))
     }
 }
 

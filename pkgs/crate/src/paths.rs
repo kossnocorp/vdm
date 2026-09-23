@@ -94,14 +94,14 @@ mod tests {
 
         let manifest = VdmPaths::discover_manifest_path(&nested).await.unwrap();
         let paths = VdmPaths::from_manifest(manifest);
-        let target = VdmSourceInput::parse_target("gh:js-fns/js-fns/src/file.ts@main").unwrap();
+        let target = VdmSourceInput::parse_target("gh:js-fns/js-fns:src/file.ts@main").unwrap();
 
         assert_eq!(paths.manifest, parent.join("vendor.toml"));
         assert_eq!(paths.root, parent);
         assert_eq!(paths.lock, paths.root.join("vendor.lock.toml"));
         assert_eq!(
             paths.target(target.as_ref()),
-            paths.root.join("vendor/@js-fns/js-fns/src/file.ts")
+            paths.root.join("vendor/@gh/js-fns/js-fns/src/file.ts")
         );
     }
 

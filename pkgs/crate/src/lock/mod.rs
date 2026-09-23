@@ -62,10 +62,15 @@ impl TryFrom<LockDocument> for VdmLock {
 
     fn try_from(document: LockDocument) -> Result<Self> {
         let mut lock = Self {
-            updates: document.updates,
+            updates: document
+                .updates
+                .into_iter()
+                .map(|(key, update)| Ok((VdmSourceInput::normalize_base(key.as_str())?, update)))
+                .collect::<Result<_>>()?,
             ..Self::default()
         };
         for (key, entry) in document.files {
+            let key = VdmSourceInput::normalize_base(key.as_str())?;
             match entry {
                 LockEntry::File(file) => {
                     insert_file(&mut lock.files, key, file)?;
@@ -103,8 +108,13 @@ impl TryFrom<LockDocument> for VdmLock {
 fn insert_file(
     files: &mut BTreeMap<VdmManifestTargetUrl, VdmLockFile>,
     key: VdmManifestTargetUrl,
-    file: VdmLockFile,
+    mut file: VdmLockFile,
 ) -> Result<()> {
+    file.dependencies = file
+        .dependencies
+        .into_iter()
+        .map(|key| VdmSourceInput::normalize_base(key.as_str()))
+        .collect::<Result<_>>()?;
     if let Some(existing) = files.get(&key) {
         ensure!(existing == &file, "Conflicting lock entries for {key}");
     } else {

@@ -135,7 +135,12 @@ mod tests {
 
     #[tokio::test]
     async fn github_folders_add_restore_overlap_and_update() {
-        github_group_add_restore_overlap_and_update("nested", "nested/", 1).await;
+        github_group_add_restore_overlap_and_update("nested", "nested/*.sh", 1).await;
+    }
+
+    #[tokio::test]
+    async fn github_repositories_add_restore_overlap_and_update() {
+        github_group_add_restore_overlap_and_update("", "nested", 3).await;
     }
 
     async fn github_group_add_restore_overlap_and_update(
@@ -146,7 +151,7 @@ mod tests {
         // Seed the Git cache with local commits so the full vendor workflow is
         // exercised without depending on GitHub or mutating process environment.
         let cache = VdmGitCache::try_new().unwrap();
-        let placeholder = VdmSourceInput::parse_target("gh:fixture/repo/**/*.sh").unwrap();
+        let placeholder = VdmSourceInput::parse_target("gh:fixture/repo:**/*.sh").unwrap();
         let repository =
             cache.repository(placeholder.as_any().downcast_ref::<VdmGitTarget>().unwrap());
         let cache_root = repository.parent().unwrap().parent().unwrap();
@@ -179,7 +184,10 @@ mod tests {
         let second = commit("b.sh", b"second");
         let directory = tempfile::tempdir().unwrap();
         let paths = VdmPaths::resolve(Some(directory.path())).await.unwrap();
-        let key = VdmManifestTargetUrl::new(format!("gh:{owner}/repo/{selection}"));
+        let key = VdmSourceInput::parse_target(&format!("gh:{owner}/repo:{selection}"))
+            .unwrap()
+            .key()
+            .clone();
         VdmVendor::add(Some(directory.path()), &format!("{key}@{first}"))
             .await
             .unwrap();
@@ -189,7 +197,7 @@ mod tests {
         assert_eq!(lock.globs[&key].len(), count);
         let nested = directory
             .path()
-            .join(format!("vendor/@{owner}/repo/nested"));
+            .join(format!("vendor/@gh/{owner}/repo/nested"));
         fs::remove_file(nested.join("a.sh")).unwrap();
         assert!(
             VdmVendor::install(Some(directory.path()), true)
@@ -200,14 +208,15 @@ mod tests {
             .await
             .unwrap();
         assert_eq!(fs::read(nested.join("a.sh")).unwrap(), b"first");
-        assert!(
-            !directory
+        assert_eq!(
+            directory
                 .path()
-                .join(format!("vendor/@{owner}/repo/ignore.txt"))
-                .exists()
+                .join(format!("vendor/@gh/{owner}/repo/ignore.txt"))
+                .exists(),
+            selection.is_empty()
         );
 
-        let overlapping = VdmManifestTargetUrl::new(format!("gh:{owner}/repo/{overlap}"));
+        let overlapping = VdmManifestTargetUrl::new(format!("gh:{owner}/repo:{overlap}"));
         VdmVendor::add(Some(directory.path()), &format!("{overlapping}@{first}"))
             .await
             .unwrap();
@@ -262,7 +271,7 @@ mod tests {
         let directory = tempfile::tempdir().unwrap();
         let paths = VdmPaths::resolve(Some(directory.path())).await.unwrap();
         let url = format!("http://{address}/package@latest/file.txt");
-        let key = VdmManifestTargetUrl::new(&url);
+        let key = VdmManifestTargetUrl::new(format!("http:{url}"));
         VdmVendor::add(Some(directory.path()), &url).await.unwrap();
         let manifest = VdmManifest::read_toml(&paths.manifest).await.unwrap();
         let targets = manifest.targets().unwrap();
@@ -305,7 +314,7 @@ mod tests {
             .await
             .unwrap();
 
-        let stale_path = directory.path().join("vendor/@owner/repo/stale.txt");
+        let stale_path = directory.path().join("vendor/@gh/owner/repo/stale.txt");
         fs::create_dir_all(stale_path.parent().unwrap()).unwrap();
         fs::write(&stale_path, "stale").unwrap();
         let unrelated_path = directory.path().join("vendor/unrelated.txt");
@@ -313,14 +322,14 @@ mod tests {
 
         let mut lock = VdmLock::default();
         lock.files.insert(
-            VdmManifestTargetUrl::new("gh:owner/repo/stale.txt"),
+            VdmManifestTargetUrl::new("gh:owner/repo:stale.txt"),
             VdmLockFile {
                 direct: true,
                 version: VdmManifestSourceVersion::new("main"),
                 revision: "revision".to_owned(),
                 hash: "sha256:stale".to_owned(),
                 source: "https://example.com/stale.txt".to_owned(),
-                path: "vendor/@owner/repo/stale.txt".to_owned(),
+                path: "vendor/@gh/owner/repo/stale.txt".to_owned(),
                 dependencies: Vec::new(),
             },
         );
@@ -331,7 +340,7 @@ mod tests {
             .unwrap();
 
         assert!(!stale_path.exists());
-        assert!(!directory.path().join("vendor/@owner").exists());
+        assert!(!directory.path().join("vendor/@gh").exists());
         assert_eq!(fs::read_to_string(unrelated_path).unwrap(), "keep");
         assert!(
             VdmLock::read_toml(&paths.lock)
@@ -346,11 +355,13 @@ mod tests {
     async fn resolves_manifest_and_target_paths() {
         let directory = tempfile::tempdir().unwrap();
         let paths = VdmPaths::resolve(Some(directory.path())).await.unwrap();
-        let target = VdmSourceInput::parse_target("gh:js-fns/js-fns/src/file.ts@main").unwrap();
+        let target = VdmSourceInput::parse_target("gh:js-fns/js-fns:src/file.ts@main").unwrap();
         assert_eq!(paths.manifest, directory.path().join("vendor.toml"));
         assert_eq!(
             paths.target(target.as_ref()),
-            directory.path().join("vendor/@js-fns/js-fns/src/file.ts")
+            directory
+                .path()
+                .join("vendor/@gh/js-fns/js-fns/src/file.ts")
         );
         assert!(
             VdmPaths::resolve(Some(Path::new("other.toml")))

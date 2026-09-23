@@ -2,21 +2,30 @@ use crate::prelude::*;
 
 impl VdmGitSource {
     pub(super) fn parse_target(&self, input: &str) -> Result<Option<Box<dyn VdmTarget>>> {
-        let Some(input) = input.strip_prefix("git:") else {
+        let explicit = input.starts_with("git:") && !input.starts_with("git://");
+        let input = if explicit { &input[4..] } else { input };
+        let Some((scheme, _)) = input.split_once("://") else {
+            ensure!(!explicit, "Invalid Git repository URL");
             return Ok(None);
         };
-        // Skip the URL's scheme delimiter; the next // separates repository
-        // and file path, even for nested repositories and SSH usernames.
-        let scheme_end = input
-            .find("://")
-            .context("Invalid Git target; expected git:<repository-url>//path[@ref]")?
-            + 3;
-        let separator = input[scheme_end..]
-            .find("//")
-            .map(|offset| scheme_end + offset)
-            .context("Git target must separate repository URL and file path with //")?;
-        let (repository, path) = input.split_at(separator);
-        let path = &path[2..];
+        if !matches!(scheme, "http" | "https" | "ssh" | "git" | "file") {
+            ensure!(!explicit, "Unsupported Git repository URL scheme");
+            return Ok(None);
+        }
+        let (repository, path, version) =
+            if let Some((repository, path)) = Self::split_repository_path(input) {
+                let (path, version) = Self::split_version(path);
+                (repository, path, version)
+            } else {
+                let (repository, version) = Self::split_url_version(input);
+                if !explicit
+                    && matches!(scheme, "http" | "https")
+                    && !repository.trim_end_matches('/').ends_with(".git")
+                {
+                    return Ok(None);
+                }
+                (repository, "", version)
+            };
         let url = Url::parse(repository).context("Invalid Git repository URL")?;
         ensure!(
             matches!(url.scheme(), "http" | "https" | "ssh" | "git" | "file"),
@@ -34,13 +43,10 @@ impl VdmGitSource {
             !url.path().trim_matches('/').is_empty(),
             "Git repository URL must have a repository path"
         );
-        let (path, version) = match path.rsplit_once('@') {
-            Some((path, version)) if !path.is_empty() => (path, version),
-            _ => (path, "HEAD"),
-        };
-        Self::validate_git_path_and_version(path, version)?;
+        let path = Self::normalize_path(path)?;
+        Self::validate_git_path_and_version(&path, version)?;
         let target = VdmGitTarget::new_git(
-            repository.to_owned(),
+            url.as_str().trim_end_matches('/').to_owned(),
             VdmManifestTargetPath::new(path),
             VdmManifestSourceVersion::new(version),
         );
@@ -48,8 +54,60 @@ impl VdmGitSource {
         Ok(Some(Box::new(target)))
     }
 
+    pub(crate) fn split_version(input: &str) -> (&str, &str) {
+        match input.rsplit_once('@') {
+            Some((path, version)) if !path.is_empty() => (path, version),
+            _ => (input, "HEAD"),
+        }
+    }
+
+    fn split_url_version(input: &str) -> (&str, &str) {
+        let start = input.find("://").unwrap() + 3;
+        let Some(path_start) = input[start..].find('/').map(|offset| start + offset) else {
+            return (input, "HEAD");
+        };
+        match input.rsplit_once('@') {
+            Some((repository, version)) if repository.len() > path_start => (repository, version),
+            _ => (input, "HEAD"),
+        }
+    }
+
+    pub(crate) fn normalize_path(path: &str) -> Result<String> {
+        let mut parts = Vec::new();
+        for part in path.split('/') {
+            match part {
+                "" | "." => {}
+                ".." => {
+                    ensure!(
+                        parts.pop().is_some(),
+                        "Repository path must not escape the repository"
+                    );
+                }
+                part => parts.push(part),
+            }
+        }
+        // Folder globs retain their recursive meaning in canonical form.
+        if path.ends_with('/') && parts.iter().any(|part| part.contains(['*', '?', '[', '{'])) {
+            parts.push("**");
+        }
+        Ok(parts.join("/"))
+    }
+
+    pub(crate) fn split_repository_path(input: &str) -> Option<(&str, &str)> {
+        // Look only after the authority, skipping scheme, SSH user and port colons.
+        let (scheme, rest) = input.split_once("://")?;
+        let start = scheme.len() + 3 + rest.find('/')?;
+        let path = input[start..].split(['?', '#']).next()?;
+        let separator = start + path.find(':')?;
+        let (repository, path) = input.split_at(separator);
+        // HTTP content versions are not Git path separators.
+        if repository.ends_with("@sha256") {
+            return None;
+        }
+        Some((repository, &path[1..]))
+    }
+
     pub(crate) fn validate_git_path_and_version(path: &str, version: &str) -> Result<()> {
-        ensure!(!path.is_empty(), "Repository file path must not be empty");
         ensure!(
             Path::new(path)
                 .components()
@@ -75,6 +133,8 @@ mod tests {
         for repository in [
             "https://gitlab.com/group/subgroup/repo.git",
             "ssh://git@example.com:2222/team/repo.git",
+            "ssh://git@[::1]:2222/team/repo.git",
+            "https://example.com:8443/team/repo.git",
             "git://example.com/repo",
             "file:///tmp/repo",
         ] {
@@ -82,32 +142,56 @@ mod tests {
                 ("src/**/*.rs", "feature/branch"),
                 ("@scope/file.ts", "v1.0"),
                 ("file.txt", "HEAD"),
+                ("tests", "master"),
+                ("tests/", "HEAD"),
             ] {
-                let key = VdmManifestTargetUrl::new(format!("git:{repository}//{path}"));
+                let key = VdmManifestTargetUrl::new(format!("{repository}:{path}"));
                 let target = VdmSourceInput::parse_manifest_target(
                     &key,
                     &VdmManifestSourceVersion::new(version),
                 )
                 .unwrap();
-                assert_eq!(target.key(), &key);
+                assert_eq!(
+                    target.key().as_str(),
+                    format!("git:{repository}:{}", path.trim_end_matches('/'))
+                );
                 assert_eq!(target.version().as_str(), version);
                 let git = target.as_any().downcast_ref::<VdmGitTarget>().unwrap();
                 assert_eq!(git.repository_url(), repository);
-                assert_eq!(git.path(), path);
+                assert_eq!(git.path(), path.trim_end_matches('/'));
                 assert!(target.vendor_path().starts_with("@git"));
             }
-            let target =
-                VdmSourceInput::parse_target(&format!("git:{repository}//file.txt")).unwrap();
+            let target = VdmSourceInput::parse_target(&format!("{repository}:file.txt")).unwrap();
             assert_eq!(target.version().as_str(), "HEAD");
+        }
+    }
+
+    #[test]
+    fn parses_savannah_targets() {
+        for (suffix, path, version) in [
+            ("tests/", "tests", "HEAD"),
+            ("tests", "tests", "HEAD"),
+            ("tests/**/*.sh", "tests/**/*.sh", "HEAD"),
+            ("tests@master", "tests", "master"),
+        ] {
+            let input = format!("git://git.git.savannah.gnu.org/bash.git:{suffix}");
+            let parsed = VdmSourceInput::parse_target(&input).unwrap();
+            let target = parsed.as_any().downcast_ref::<VdmGitTarget>().unwrap();
+            assert_eq!(
+                target.repository_url(),
+                "git://git.git.savannah.gnu.org/bash.git"
+            );
+            assert_eq!(target.path(), path);
+            assert_eq!(target.version().as_str(), version);
         }
     }
 
     #[test]
     fn expands_grouped_git_manifest_sources() {
         for base in [
-            "git:https://example.com/team/repo.git",
-            "git:https://example.com/team/repo.git//",
-            "git:https://example.com/team/repo.git//src",
+            "https://example.com/team/repo.git",
+            "https://example.com/team/repo.git:",
+            "https://example.com/team/repo.git:src",
         ] {
             let manifest: VdmManifest = toml::from_str(&format!(
                 "[sources.{base:?}]\nversion = 'main'\nfiles = ['file.ts']\n"
@@ -137,15 +221,13 @@ mod tests {
     #[test]
     fn rejects_invalid_git_targets() {
         for input in [
-            "git:https://example.com/repo.git",
-            "git:https://example.com/repo.git//",
-            "git:https://example.com/repo.git//../secret",
-            "git:https://example.com/repo.git///absolute",
-            "git:https://example.com/repo.git//file@",
-            "git:https://example.com/repo.git//file@bad..ref",
-            "git:https://example.com/repo.git//[broken",
-            "git:ftp://example.com/repo.git//file",
-            "git:https://example.com/repo.git?query//file",
+            "git:invalid",
+            "git:https://example.com/",
+            "https://example.com/repo.git:../secret",
+            "https://example.com/repo.git:file@",
+            "https://example.com/repo.git:file@bad..ref",
+            "https://example.com/repo.git:[broken",
+            "ftp://example.com/repo.git:file",
         ] {
             assert!(VdmSourceInput::parse_target(input).is_err(), "{input}");
         }
