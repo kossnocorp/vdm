@@ -94,3 +94,37 @@ jobs:
       - name: Display Stats
         if: always()
         uses: ./.github/actions/stats
+
+  publish:
+    name: Publish Crates
+    needs: release
+    runs-on: ubuntu-latest
+    environment: release
+    permissions:
+      contents: read
+    env:
+      MISE_ENV_RELEASE: "true"
+
+    steps:
+      - name: Check Out Repository
+        uses: actions/checkout@v6
+        with:
+          fetch-depth: 1
+
+      - name: Set Up Dev Env
+        uses: ./.github/actions/setup
+
+      - name: Clean Up Git State
+        shell: bash
+        run: |
+          git add .
+          git stash
+
+      - name: Publish Crates
+        run: mise publish
+        env:
+          CARGO_REGISTRY_TOKEN: ${{ secrets.CARGO_REGISTRY_TOKEN }}
+
+      - name: Display Stats
+        if: always()
+        uses: ./.github/actions/stats

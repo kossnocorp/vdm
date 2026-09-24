@@ -59,3 +59,45 @@ run = "cargo build --release"
 [tasks.symlink]
 run = "ln -sf $(pwd)/target/release/vdm $HOME/.local/bin/vdm"
 depends = ["build:release"]
+
+
+# Version ======================================================================
+
+# version ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+[tasks."version"]
+usage = '''
+arg "<version>" help="Version to apply"
+'''
+run = '''
+#!/usr/bin/env bash
+cargo release version {{usage.version}} \
+  --workspace \
+  --no-confirm \
+  --execute
+'''
+
+
+# Publish ======================================================================
+
+# publish ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+[tasks.publish]
+run = '''
+#!/usr/bin/env bash
+fnox exec -- cargo release publish \
+  --workspace \
+  --all-features \
+  --no-confirm \
+  --allow-branch '*' \
+  --execute
+'''
+
+# publish:dry ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+[tasks."publish:dry"]
+run = '''
+#!/usr/bin/env bash
+cargo release publish \
+  --workspace \
+  --all-features \
+  --no-confirm \
+  --allow-branch '*'
+'''
