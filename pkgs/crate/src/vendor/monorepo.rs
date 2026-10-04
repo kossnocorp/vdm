@@ -99,7 +99,7 @@ mod tests {
             loop {
                 let (mut stream, _) = listener.accept().await.unwrap();
                 let mut request = [0; 4096];
-                stream.read(&mut request).await.unwrap();
+                stream.read_exact(&mut request).await.unwrap();
                 let body = *server_body.lock().unwrap();
                 stream.write_all(format!("HTTP/1.1 200 OK\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{body}", body.len()).as_bytes()).await.unwrap();
             }
