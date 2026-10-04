@@ -3,7 +3,7 @@ use crate::cli::prelude::*;
 #[derive(Args)]
 pub struct VdmCliCmdInstall {
     #[usage(flatten)]
-    manifest_args: VdmCliArgsManifest,
+    pub(super) manifest_args: VdmCliArgsManifest,
 
     /// Never hit network, use only local cache.
     #[usage(short, long, default = "false")]

@@ -4,6 +4,15 @@ use tokio::io::AsyncReadExt;
 
 impl VdmVendor {
     pub async fn install(manifest_path: Option<&Path>, offline: bool) -> Result<()> {
+        for manifest in Self::package_manifests(manifest_path).await? {
+            Self::install_package(Some(&manifest), offline)
+                .await
+                .with_context(|| format!("Failed to install {}", manifest.display()))?;
+        }
+        Ok(())
+    }
+
+    async fn install_package(manifest_path: Option<&Path>, offline: bool) -> Result<()> {
         let state = VdmState::create()
             .initialize(manifest_path)
             .await?

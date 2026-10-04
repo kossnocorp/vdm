@@ -18,6 +18,16 @@ pub enum VdmCliCmd {
     /// Add a dependency
     Add(VdmCliCmdAdd),
 
-    /// Update a dependency
+    /// Update one or all dependencies
     Update(VdmCliCmdUpdate),
+}
+
+impl VdmCliCmd {
+    pub(super) fn manifest_args_mut(&mut self) -> &mut VdmCliArgsManifest {
+        match self {
+            Self::Install(command) => &mut command.manifest_args,
+            Self::Add(command) => &mut command.manifest_args,
+            Self::Update(command) => &mut command.manifest_args,
+        }
+    }
 }

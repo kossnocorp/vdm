@@ -6,6 +6,7 @@ mod install;
 
 mod update;
 
+mod monorepo;
 mod review;
 
 pub struct VdmVendor;

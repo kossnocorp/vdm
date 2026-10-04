@@ -9,6 +9,8 @@ pub use target::*;
 #[derive(Debug, Deserialize, Serialize, Default)]
 #[serde(try_from = "ManifestDocument")]
 pub struct VdmManifest {
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub monorepo: Option<VdmManifestMonorepo>,
     #[serde(default)]
     sources: BTreeMap<VdmManifestTargetUrl, VdmManifestSource>,
 }
@@ -16,6 +18,7 @@ pub struct VdmManifest {
 #[derive(Deserialize)]
 #[serde(deny_unknown_fields)]
 struct ManifestDocument {
+    monorepo: Option<VdmManifestMonorepo>,
     #[serde(default)]
     sources: BTreeMap<VdmManifestTargetUrl, VdmManifestSource>,
 }
@@ -40,7 +43,10 @@ impl TryFrom<ManifestDocument> for VdmManifest {
             );
             sources.insert(key, source);
         }
-        Ok(Self { sources })
+        Ok(Self {
+            sources,
+            monorepo: document.monorepo,
+        })
     }
 }
 
@@ -110,6 +116,12 @@ impl VdmManifest {
 }
 
 impl VdmFileToml for VdmManifest {}
+
+#[derive(Debug, Deserialize, Serialize)]
+#[serde(deny_unknown_fields)]
+pub struct VdmManifestMonorepo {
+    pub pkgs: Vec<String>,
+}
 
 #[cfg(test)]
 mod tests {

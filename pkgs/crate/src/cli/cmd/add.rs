@@ -3,7 +3,7 @@ use crate::cli::prelude::*;
 #[derive(Args)]
 pub struct VdmCliCmdAdd {
     #[usage(flatten)]
-    manifest_args: VdmCliArgsManifest,
+    pub(super) manifest_args: VdmCliArgsManifest,
 
     #[usage(value_name = "FILE")]
     file: String,
